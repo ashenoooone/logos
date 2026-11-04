@@ -1,6 +1,6 @@
 import { Container, Stack, Text, Title } from '@mantine/core'
 
-import { HealthStatusCard } from '@/modules/Health'
+import { HealthStatusCard } from '@/modules/health'
 
 export function HomePage() {
   return (

@@ -1,6 +1,6 @@
 import { Badge, Button, Group, Paper, Stack, Text } from '@mantine/core'
 
-import { useHealthCheck, type HealthState } from '../hooks/useHealthCheck'
+import { useHealthCheck, type HealthState } from '../hooks/use-health-check'
 
 interface StatusPresentation {
   label: string
