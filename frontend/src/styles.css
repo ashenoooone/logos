@@ -1,0 +1,32 @@
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f7f6f3;
+  color: #2f3437;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.logos-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid #d9d5cd;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #2f3437;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.logos-link:hover {
+  background: #f7f6f3;
+}

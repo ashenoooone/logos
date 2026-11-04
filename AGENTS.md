@@ -20,15 +20,18 @@ Project docs stored locally:
 
 ## Current Baseline
 
-- Accepted choices recorded in `docs/adr/0001-project-baseline.md` and `docs/adr/0002-backend-initialization.md`.
+- Accepted choices recorded in `docs/adr/0001-project-baseline.md` through `docs/adr/0004-frontend-initialization.md`.
 - Backend: Python 3.13 + uv, FastAPI + Uvicorn, sync SQLAlchemy 2 + Alembic, argon2-cffi; pytest, Ruff, mypy. Versions pinned in `uv.lock`.
-- Frontend: React / Mantine UI chosen but **not initialized** — no frontend code, build or tooling yet.
+- Frontend in `frontend/`: React 19 + Mantine UI 9, TypeScript strict + Vite, pnpm 11.25.0, TanStack Router with code-based routes. Node.js 24.15.0 in `.nvmrc`, supported `>=24.15.0 <25`; activate it before running pnpm. Exact dependencies in `package.json` and `pnpm-lock.yaml`; no workspace. ESLint, Vitest + Testing Library.
 - Database: SQLite file. Path from `LOGOS_DATABASE_PATH`, default `data/logos.sqlite3` relative to the working directory. `.env` is not loaded automatically. Migrations only via explicit `uv run alembic upgrade head`.
 - One installation = one company. First integration: Telegram Bot API, not personal Telegram account.
 - First admin created by private interactive command, not public registration: `uv run logos-backend create-admin --login <login>`; one row enforced in the DB; rerun never changes the existing admin.
 - Backend implemented: single `GET /health` readiness endpoint, `administrators` migration, first-admin CLI. Contract in `docs/backend-contract.md`.
-- No user story implemented: no login, sessions, registration, invitations, channels, messages, frontend, or admin HTTP API.
+- Frontend implemented: technical readiness screen with real `/health`, loading, distinct backend 503/network/other HTTP failures, manual retry, abort on unmount, unknown-route page and link home. Dev and preview proxy to `127.0.0.1:8000`; stopped backend actually returns proxy HTTP 502. Production requires separate same-origin `/health` routing before SPA fallback; Vite is not the production server.
+- No user story implemented: no login, sessions, registration, invitations, channels, messages, or admin HTTP API.
 - Commands: `uv sync --locked`, `uv run alembic upgrade head`, `uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1`, `uv run pytest -q`, `uv run ruff check .`, `uv run mypy src tests`. Run from repo root.
+- Frontend commands, from `frontend/`: `pnpm install --frozen-lockfile`, `pnpm dev`, `pnpm build`, `pnpm preview`, `pnpm lint`, `pnpm type-check`, `pnpm test`. Build output `frontend/dist/`. Vite reads frontend env files automatically; `VITE_*` is public, never store secrets there.
+- Frontend lint/types/build and 18 tests passed; real dev/preview HTTP 200/503/502 and SPA shell fallback checked. Browser tool was denied by user policy (`eval`); user explicitly chose manual browser acceptance. It is not yet confirmed. See `docs/frontend-handoff.md`; do not claim visual or browser interaction checks passed.
 - Never invent commands or report unexecuted checks.
 
 ## Requirements Sources
