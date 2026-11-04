@@ -41,9 +41,14 @@ export function SessionHeader() {
           Logos
         </Anchor>
         {subject.type === 'administrator' && (
-          <Anchor component={Link} to="/employees" size="sm">
-            Сотрудники
-          </Anchor>
+          <>
+            <Anchor component={Link} to="/employees" size="sm">
+              Сотрудники
+            </Anchor>
+            <Anchor component={Link} to="/channels" size="sm">
+              Каналы
+            </Anchor>
+          </>
         )}
         {subject.type === 'manager' && (
           <Anchor component={Link} to="/profile" size="sm">
