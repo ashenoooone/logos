@@ -95,9 +95,7 @@ export function ChannelsPanel() {
   return (
     <Stack gap="lg">
       <Group gap="xs" align="baseline">
-        <Title order={1} fz={{ base: 24, sm: 28 }}>
-          Каналы
-        </Title>
+        <Title order={1}>Каналы</Title>
         {channel && (
           <Text size="sm" c="dimmed">
             работает {channel.status === 'connected' ? 1 : 0} из 1
@@ -165,11 +163,9 @@ function ChannelCard({
   const isError = channel.status === 'error'
   return (
     <Paper
-      withBorder
-      radius="md"
       p={{ base: 'md', sm: 'lg' }}
-      bg={isError ? 'red.0' : 'white'}
-      style={isError ? { borderColor: 'var(--mantine-color-red-6)' } : undefined}
+      bg={isError ? 'red.0' : 'gray.0'}
+      style={isError ? { boxShadow: 'inset 3px 0 0 var(--mantine-color-red-6)' } : undefined}
     >
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
@@ -195,7 +191,7 @@ function ChannelCard({
 
         {channel.bot_username && (
           <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-            {channel.name} · @{channel.bot_username}
+            {channel.name}, @{channel.bot_username}
           </Text>
         )}
         {isError && channel.error && <Text size="sm">{ERRORS[channel.error]}</Text>}
@@ -272,7 +268,7 @@ function ConnectForm({
   }
 
   return (
-    <Paper withBorder radius="md" p={{ base: 'md', sm: 'lg' }} bg="white">
+    <Paper bg="gray.0" p={{ base: 'md', sm: 'lg' }}>
       <form onSubmit={handleSubmit} noValidate>
         <Stack gap="md">
           <Title order={2} fz="lg">

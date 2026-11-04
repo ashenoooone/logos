@@ -36,7 +36,7 @@ describe('доступ по сессии', () => {
   it('менеджер не попадает в «Сотрудники» и не видит ссылку на раздел', async () => {
     mockBackend({ 'GET /auth/me': () => jsonResponse({ subject: MANAGER_SUBJECT }) })
     renderApp('/employees')
-    expect(await screen.findByRole('heading', { name: 'Logos' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Здравствуйте, Анна' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Сотрудники' })).not.toBeInTheDocument()
   })
 })
@@ -86,7 +86,7 @@ describe('вход менеджера', () => {
     renderApp('/login')
     const user = await submitLogin()
 
-    expect(await screen.findByText('Анна Петрова · anna@example.com')).toBeInTheDocument()
+    expect(await screen.findByText('anna@example.com')).toBeInTheDocument()
     const login = calls.find((call) => call.key === 'POST /auth/manager/login')
     expect(login?.body).toEqual({
       email: 'anna@example.com',
@@ -127,7 +127,7 @@ describe('приглашение', () => {
     await user.type(screen.getByLabelText(/Повторите пароль/), 'abcdefgh1')
     await user.click(screen.getByRole('button', { name: 'Сохранить пароль' }))
 
-    expect(await screen.findByText('Анна Петрова · anna@example.com')).toBeInTheDocument()
+    expect(await screen.findByText('anna@example.com')).toBeInTheDocument()
     expect(calls.find((call) => call.key === 'POST /invitations/accept')?.body).toEqual({
       token: 'secret-token',
       password: 'abcdefgh1',

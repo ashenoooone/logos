@@ -4,7 +4,7 @@ import { InboxPanel } from '@/modules/inbox'
 
 export function InboxPage() {
   return (
-    <Container size="xl" py="md" px="md">
+    <Container size="xl" py="lg" px="md">
       <InboxPanel />
     </Container>
   )

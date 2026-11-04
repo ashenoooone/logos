@@ -1,4 +1,4 @@
-import { Anchor, Badge, Group } from '@mantine/core'
+import { Badge } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useRef } from 'react'
@@ -63,15 +63,13 @@ export function InboxNavLink() {
   }, [lastIncoming])
 
   return (
-    <Anchor component={Link} to="/inbox" size="sm">
-      <Group gap={4} wrap="nowrap" component="span">
-        Входящие
-        {total > 0 && (
-          <Badge size="sm" circle={total < 10} aria-label={`непрочитанных: ${total}`}>
-            {total}
-          </Badge>
-        )}
-      </Group>
-    </Anchor>
+    <Link to="/inbox" className="logos-nav">
+      Входящие
+      {total > 0 && (
+        <Badge size="sm" color="red" circle={total < 10} aria-label={`непрочитанных: ${total}`}>
+          {total}
+        </Badge>
+      )}
+    </Link>
   )
 }

@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Group, Loader, Stack, Table, Text, Title } from '@mantine/core'
+import { Alert, Avatar, Badge, Button, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import { useState } from 'react'
 
 import { failureMessage } from '@/common/api-client'
@@ -27,18 +27,22 @@ export function ManagersPanel() {
     reload()
   }
 
+  const managers = state.kind === 'ready' ? state.managers : []
+  const pending = managers.filter((manager) => manager.status === 'pending')
+  const active = managers.filter((manager) => manager.status === 'active')
+
+  function invite(manager?: Manager) {
+    setNotice(null)
+    setModal(manager ? { manager } : {})
+  }
+
   return (
-    <Stack gap="lg">
-      <Group justify="space-between" wrap="wrap" gap="sm">
-        <Title order={1} fz={{ base: 24, sm: 28 }}>
+    <Stack gap="xl">
+      <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+        <Title order={1} fz={{ base: 32, sm: 44 }} lh={1.05}>
           Сотрудники
         </Title>
-        <Button
-          onClick={() => {
-            setNotice(null)
-            setModal({})
-          }}
-        >
+        <Button size="md" onClick={() => invite()}>
           Добавить менеджера
         </Button>
       </Group>
@@ -60,69 +64,81 @@ export function ManagersPanel() {
           </Stack>
         </Alert>
       )}
-      {state.kind === 'ready' && state.managers.length === 0 && (
-        <Text c="dimmed">Менеджеров пока нет.</Text>
+
+      {state.kind === 'ready' && (
+        <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg">
+          <Tile tone="violet" value={managers.length} label="Всего в команде" />
+          <Tile tone="green" value={active.length} label="Активны" />
+          <Tile tone="orange" value={pending.length} label="Ждут пароль" />
+        </SimpleGrid>
       )}
-      {state.kind === 'ready' && state.managers.length > 0 && (
-        <Table.ScrollContainer minWidth={640}>
-          <Table verticalSpacing="sm">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Имя и фамилия</Table.Th>
-                <Table.Th>Email</Table.Th>
-                <Table.Th>Роль</Table.Th>
-                <Table.Th>Статус</Table.Th>
-                <Table.Th>Добавлен</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {state.managers.map((manager) => (
-                <Table.Tr key={manager.id}>
-                  <Table.Td>{manager.name}</Table.Td>
-                  <Table.Td style={{ overflowWrap: 'anywhere' }}>{manager.email}</Table.Td>
-                  <Table.Td>Менеджер</Table.Td>
-                  <Table.Td>
-                    {manager.status === 'active' ? (
-                      <Badge color="green" variant="light">
-                        Активен
-                      </Badge>
-                    ) : (
-                      <Badge color="yellow" variant="light">
-                        Ожидает пароль
-                      </Badge>
-                    )}
-                  </Table.Td>
-                  <Table.Td>{new Date(manager.created_at).toLocaleDateString('ru-RU')}</Table.Td>
-                  <Table.Td>
-                    {manager.status === 'pending' && (
-                      <Button
-                        size="xs"
-                        variant="default"
-                        onClick={() => {
-                          setNotice(null)
-                          setModal({ manager })
-                        }}
-                      >
-                        Повторить приглашение
-                      </Button>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+
+      {state.kind === 'ready' && managers.length === 0 && <Text c="dimmed">Менеджеров пока нет.</Text>}
+      {managers.length > 0 && (
+        <Stack gap={0} component="section" aria-label="Команда">
+          <Title order={2} pb="sm" style={{ borderBottom: '2px solid var(--mantine-color-ink-6)' }}>
+            Команда
+          </Title>
+          {/* Ожидающие пароль — первыми: по ним нужно действие. */}
+          {[...pending, ...active].map((manager) => (
+            <ManagerRow key={manager.id} manager={manager} onInvite={invite} />
+          ))}
+        </Stack>
       )}
 
       {modal && (
-        <InvitationModal
-          manager={modal.manager}
-          onClose={() => setModal(null)}
-          onDone={handleDone}
-        />
+        <InvitationModal manager={modal.manager} onClose={() => setModal(null)} onDone={handleDone} />
       )}
     </Stack>
+  )
+}
+
+/** Цветная плитка с числом — в стиле плиток главной, только без ссылки. */
+function Tile({ tone, value, label }: { tone: 'violet' | 'green' | 'orange'; value: number; label: string }) {
+  return (
+    <div className={`logos-hub-tile logos-hub-stat logos-hub-${tone}`}>
+      <Text component="span" className="logos-hub-title">
+        {label}
+      </Text>
+      <p className="logos-hub-figure">
+        <span className="logos-hub-number">{value}</span>
+      </p>
+    </div>
+  )
+}
+
+/** Строка менеджера: аватар, имя крупно, email и дата, статус и действие. */
+function ManagerRow({ manager, onInvite }: { manager: Manager; onInvite: (manager: Manager) => void }) {
+  const isPending = manager.status === 'pending'
+  return (
+    <Group className="logos-row" justify="space-between" wrap="wrap" gap="md">
+      <Group gap="md" wrap="nowrap" style={{ minWidth: 0 }}>
+        <Avatar size="md" color="initials" name={manager.name} />
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text fz="lg" fw={500} style={{ overflowWrap: 'anywhere' }}>
+            {manager.name}
+          </Text>
+          <Group gap="md" wrap="wrap">
+            <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+              {manager.email}
+            </Text>
+            <Text size="sm" c="dimmed">
+              менеджер, добавлен {new Date(manager.created_at).toLocaleDateString('ru-RU')}
+            </Text>
+          </Group>
+        </Stack>
+      </Group>
+      <Group gap="sm" wrap="nowrap">
+        <Badge color={isPending ? 'orange' : 'green'} variant="light">
+          {isPending ? 'Ожидает пароль' : 'Активен'}
+        </Badge>
+        {isPending && (
+          <Button size="xs" variant="default" onClick={() => onInvite(manager)}>
+            Повторить приглашение
+          </Button>
+        )}
+      </Group>
+    </Group>
   )
 }
 

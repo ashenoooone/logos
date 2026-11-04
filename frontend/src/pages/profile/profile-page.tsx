@@ -4,7 +4,7 @@ import { ProfilePanel } from '@/modules/account'
 
 export function ProfilePage() {
   return (
-    <Container size={560} py="xl" px="md">
+    <Container size={920} py="xl" px="md">
       <ProfilePanel />
     </Container>
   )

@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Loader, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { Alert, Button, Flex, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 
@@ -86,77 +86,76 @@ export function TagsAdminPanel() {
   }
 
   return (
-    <Stack gap="md">
-      <Title order={2}>Теги</Title>
-      <Text size="sm" c="dimmed">
-        Стандартные теги видны всем менеджерам в подсказках. Менеджеры создают свои теги сами и
-        удаляют только свои. Удалённый тег снимается со всех диалогов.
-      </Text>
-      <form onSubmit={handleCreate}>
-        <Group align="flex-end" gap="sm">
-          <TextInput
-            label="Новый стандартный тег"
-            maxLength={50}
-            value={name}
-            onChange={(event) => setName(event.currentTarget.value)}
-          />
-          <Button type="submit" loading={pending} disabled={!name.trim()}>
-            Добавить
-          </Button>
-        </Group>
-      </form>
-      {error && (
-        <Alert color="red" role="alert" withCloseButton onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-      <Paper withBorder radius="md">
-        {tags.length === 0 ? (
-          <Text size="sm" c="dimmed" p="md">
-            Тегов пока нет.
-          </Text>
-        ) : (
-          <Table.ScrollContainer minWidth={520}>
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Тег</Table.Th>
-                  <Table.Th>Автор</Table.Th>
-                  <Table.Th>Диалогов</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {tags.map((tag) => (
-                  <Table.Tr key={tag.id}>
-                    <Table.Td>
-                      <TagBadge tag={tag} />
-                    </Table.Td>
-                    <Table.Td>{tag.standard ? 'Стандартный' : tag.author}</Table.Td>
-                    <Table.Td>{tag.conversation_count}</Table.Td>
-                    <Table.Td>
-                      <Group gap="xs" justify="flex-end" wrap="nowrap">
-                        <Button size="compact-xs" variant="default" disabled={pending} onClick={() => handleRename(tag)}>
-                          Переименовать
-                        </Button>
-                        <Button
-                          size="compact-xs"
-                          variant="light"
-                          color="red"
-                          disabled={pending}
-                          onClick={() => confirmTagDelete(tag) && void run(() => deleteTag(tag.id))}
-                        >
-                          Удалить
-                        </Button>
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+    <Flex direction={{ base: 'column', md: 'row' }} gap="xl" align="flex-start">
+      <Stack gap="lg" style={{ flex: 1, minWidth: 0 }} w="100%">
+        <Title order={1}>Теги</Title>
+        {error && (
+          <Alert color="red" role="alert" withCloseButton onClose={() => setError(null)}>
+            {error}
+          </Alert>
         )}
+        <Stack gap={0} style={{ borderTop: '2px solid var(--mantine-color-ink-6)' }}>
+          {tags.length === 0 && (
+            <Text c="dimmed" py="md">
+              Тегов пока нет.
+            </Text>
+          )}
+          {tags.map((tag) => (
+            <Group
+              key={tag.id}
+              justify="space-between"
+              wrap="wrap"
+              gap="sm"
+              py="md"
+              style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+            >
+              <Group gap="md" wrap="wrap" style={{ minWidth: 0 }}>
+                <TagBadge tag={tag} />
+                <Text size="sm" c="dimmed">
+                  {tag.standard ? 'Стандартный' : tag.author}
+                </Text>
+                <Text size="sm" c="dimmed">
+                  диалогов: {tag.conversation_count}
+                </Text>
+              </Group>
+              <Group gap="xs" wrap="nowrap">
+                <Button size="xs" variant="default" disabled={pending} onClick={() => handleRename(tag)}>
+                  Переименовать
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="red"
+                  disabled={pending}
+                  onClick={() => confirmTagDelete(tag) && void run(() => deleteTag(tag.id))}
+                >
+                  Удалить
+                </Button>
+              </Group>
+            </Group>
+          ))}
+        </Stack>
+      </Stack>
+
+      <Paper bg="gray.0" p="lg" w={{ base: '100%', md: 320 }} style={{ flexShrink: 0 }}>
+        <form onSubmit={handleCreate}>
+          <Stack gap="md">
+            <TextInput
+              label="Новый стандартный тег"
+              maxLength={50}
+              value={name}
+              onChange={(event) => setName(event.currentTarget.value)}
+            />
+            <Button type="submit" loading={pending} disabled={!name.trim()} fullWidth>
+              Добавить
+            </Button>
+            <Text size="sm" c="dimmed">
+              Стандартные теги видны всем менеджерам в подсказках. Менеджеры создают свои теги сами и
+              удаляют только свои. Удалённый тег снимается со всех диалогов.
+            </Text>
+          </Stack>
+        </form>
       </Paper>
-    </Stack>
+    </Flex>
   )
 }

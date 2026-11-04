@@ -1,7 +1,10 @@
-import { Container, Paper, Stack, Text, Title } from '@mantine/core'
+import { Container, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import type { ReactNode } from 'react'
 
-/** Узкая карточка по центру экрана для входа, приглашения и восстановления. */
+/**
+ * Экран входа, приглашения и восстановления: крупный заголовок слева, форма на
+ * серой плашке справа; на телефоне — друг под другом.
+ */
 export function CenteredCard({
   title,
   description,
@@ -12,22 +15,25 @@ export function CenteredCard({
   children: ReactNode
 }) {
   return (
-    <Container size={440} py={{ base: 32, sm: 80 }} px="md">
-      <Paper withBorder radius="md" p={{ base: 'lg', sm: 'xl' }} bg="white">
-        <Stack gap="lg">
-          <Stack gap={4}>
-            <Title order={1} fz={{ base: 24, sm: 28 }} lh={1.2}>
-              {title}
-            </Title>
-            {description && (
-              <Text size="sm" c="dimmed" lh={1.5}>
-                {description}
-              </Text>
-            )}
-          </Stack>
-          {children}
+    <Container size={960} py={{ base: 32, sm: 96 }} px="md">
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={{ base: 'lg', sm: 64 }}>
+        <Stack gap="md">
+          <Text fw={700} fz="lg">
+            Logos
+          </Text>
+          <Title order={1} fz={{ base: 32, sm: 44 }} lh={1.05} style={{ letterSpacing: '-0.02em' }}>
+            {title}
+          </Title>
+          {description && (
+            <Text c="dimmed" lh={1.5} maw={380}>
+              {description}
+            </Text>
+          )}
         </Stack>
-      </Paper>
+        <Paper bg="gray.0" p={{ base: 'lg', sm: 'xl' }}>
+          {children}
+        </Paper>
+      </SimpleGrid>
     </Container>
   )
 }

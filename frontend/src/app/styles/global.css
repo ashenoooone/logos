@@ -1,3 +1,22 @@
+/* Hallmark · checked: 2026-11-04 · genre: modern-minimal (inferred) · shape: app screen
+ * theme: custom (by request: kontur.ru career tokens, measured 2026-11-04; radii 12 fields / 16 surfaces / pill controls) · density: compact
+ * built: the project · redesign: full · shape: app screen · v2.0.0 */
+/* Hallmark · dropped nothing · handlers rewritten in place: sort Select and filter MultiSelects became Chip groups with the same onSort/onFilters calls, invitation buttons share invite() · same wiring */
+/* Hallmark · waive 26b · Mantine Button and Input ship :active and :disabled styles · every control on these screens is a Mantine component */
+
+:root {
+  /* Тёмный тон шапки и акценты плиток — цвета карьерного сайта Контура. */
+  --logos-color-night: #21212a;
+  --logos-color-violet: #844bec;
+  --logos-color-green: #26ad50;
+  --logos-color-orange: #fc7630;
+  /* Плитки главной: фирменный цвет с едва заметным сдвигом тона к краю — читается как плоский. */
+  --logos-fill-violet: linear-gradient(160deg, #844bec 40%, #7a3fe8 100%);
+  --logos-fill-green: linear-gradient(160deg, #26ad50 40%, #2fbb5a 100%);
+  --logos-fill-orange: linear-gradient(160deg, #fc7630 40%, #ff8640 100%);
+  --logos-fill-night: linear-gradient(160deg, #21212a 40%, #2c2c3a 100%);
+}
+
 html,
 body,
 #root {
@@ -6,27 +25,330 @@ body,
 
 body {
   margin: 0;
-  background: #f7f6f3;
-  color: #2f3437;
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  background: var(--mantine-color-white);
+  color: var(--mantine-color-ink-6);
+  font-family: var(--mantine-font-family);
+  font-size: var(--mantine-font-size-md);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Поля и кнопки форм — 40px, вровень друг с другом. */
+.mantine-Input-wrapper {
+  --input-height-sm: 40px;
+}
+
+.mantine-Button-root {
+  --button-height-sm: 40px;
+}
+
+/* Mantine показывает фокус поля только сменой цвета рамки с анимацией; нужен
+   мгновенный и заметный ободок, как у кнопок (focusRing: auto). */
+.mantine-Input-input:focus-within {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+/* Пункты шапки: чёрный текст, активный подчёркнут. */
+.logos-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 2px solid transparent;
+  color: var(--mantine-color-ink-6);
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.logos-nav:hover {
+  color: var(--mantine-color-ink-9);
+}
+
+.logos-nav[data-status='active'] {
+  border-bottom-color: var(--mantine-color-ink-6);
+}
+
+.logos-nav:focus-visible,
+.logos-link:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
 }
 
 .logos-link {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  min-height: 36px;
-  padding: 6px 14px;
-  border: 1px solid #d9d5cd;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #2f3437;
-  font-size: 14px;
+  min-height: 32px;
+  padding: 4px 16px;
+  border-radius: var(--mantine-radius-xl);
+  background: var(--mantine-color-ink-6);
+  color: var(--mantine-color-white);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
   text-decoration: none;
 }
 
 .logos-link:hover {
-  background: #f7f6f3;
+  background: var(--mantine-color-ink-9);
+}
+
+/* Строка настроек профиля: название раздела слева, форма справа. */
+.logos-settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-xl);
+  border-bottom: 1px solid var(--mantine-color-gray-3);
+}
+
+@media (min-width: 48em) {
+  .logos-settings-row {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: var(--mantine-spacing-xl);
+  }
+}
+
+/* Шапка: тёмный блок по ширине контента, скруглённый снизу. */
+.logos-header {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding-inline: 12px;
+  border-radius: 0 0 28px 28px;
+  background: var(--logos-color-night);
+  color: var(--mantine-color-white);
+}
+
+.logos-header .logos-nav {
+  padding-block: 16px;
+  color: var(--mantine-color-gray-3);
+}
+
+.logos-header .logos-nav:hover,
+.logos-header .logos-nav[data-status='active'] {
+  color: var(--mantine-color-white);
+}
+
+.logos-header .logos-nav[data-status='active'] {
+  border-bottom-color: var(--mantine-color-white);
+}
+
+/* На тёмном фоне кольцо фокуса белое, иначе его не видно. */
+.logos-header {
+  --mantine-primary-color-filled: var(--mantine-color-white);
+}
+
+.logos-header .logos-nav:focus-visible {
+  outline-color: var(--mantine-color-white);
+}
+
+/* Строка списка с подсветкой при наведении, как строки вакансий. */
+.logos-row {
+  padding: var(--mantine-spacing-md);
+  border-bottom: 1px solid var(--mantine-color-gray-3);
+}
+
+.logos-row:hover {
+  border-radius: var(--mantine-radius-lg);
+  background: var(--mantine-color-gray-0);
+}
+
+/* Невыбранная пилюля фильтра на hover заметно темнеет. */
+.mantine-Chip-label:not([data-checked]):hover {
+  background: var(--mantine-color-gray-3);
+}
+
+/* Выбранная чёрная пилюля на hover светлеет, как основная кнопка. */
+.mantine-Chip-label[data-checked]:hover {
+  background: var(--mantine-color-ink-5);
+}
+
+/* Главная: бенто — высокая плитка слева, две справа; на телефоне — столбик. */
+.logos-bento {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-lg);
+}
+
+@media (min-width: 48em) {
+  .logos-bento {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-auto-rows: minmax(220px, auto);
+  }
+
+  .logos-hub-tall {
+    grid-row: span 2;
+  }
+}
+
+.logos-hub-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xl);
+  min-width: 0;
+  min-height: 200px;
+  padding: 28px 32px 32px;
+  overflow: hidden;
+  border-radius: 32px;
+  text-decoration: none;
+  isolation: isolate;
+}
+
+/* Крупная полупрозрачная окружность в углу — геометрия вместо картинки. */
+.logos-hub-tile::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  right: -90px;
+  bottom: -110px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.12);
+  transition: transform 250ms ease;
+}
+
+.logos-hub-tall::after {
+  width: 420px;
+  height: 420px;
+  right: -140px;
+  bottom: -160px;
+}
+
+/* Плитка-счётчик без ссылки: ниже, без реакции на наведение. */
+.logos-hub-stat {
+  min-height: 172px;
+  padding: 24px 28px 28px;
+}
+
+a.logos-hub-tile:hover::after {
+  transform: scale(1.08);
+}
+
+.logos-hub-tile:focus-visible {
+  outline: 3px solid var(--mantine-color-ink-6);
+  outline-offset: 3px;
+}
+
+.logos-hub-violet {
+  background: var(--logos-fill-violet);
+  color: var(--mantine-color-white);
+}
+
+.logos-hub-night {
+  background: var(--logos-fill-night);
+  color: var(--mantine-color-white);
+}
+
+.logos-hub-green {
+  background: var(--logos-fill-green);
+  color: var(--mantine-color-ink-6);
+}
+
+.logos-hub-orange {
+  background: var(--logos-fill-orange);
+  color: var(--mantine-color-ink-6);
+}
+
+.logos-hub-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-md);
+}
+
+.logos-hub-title {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: inherit;
+}
+
+/* Кружок со стрелкой: белый на цветном, на hover поворачивается вправо. */
+.logos-hub-arrow {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--mantine-color-white);
+  color: var(--mantine-color-ink-6);
+  transition: transform 200ms ease;
+}
+
+a.logos-hub-tile:hover .logos-hub-arrow {
+  transform: rotate(45deg);
+}
+
+.logos-hub-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-lg);
+}
+
+.logos-hub-figure {
+  margin: 0;
+  font-size: var(--mantine-font-size-lg);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.logos-hub-number {
+  font-size: 72px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.logos-hub-tall .logos-hub-number {
+  font-size: clamp(72px, 9vw, 128px);
+}
+
+.logos-hub-value-sm {
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.logos-hub-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-sm);
+}
+
+.logos-hub-pills > span {
+  padding: 6px 14px;
+  border-radius: var(--mantine-radius-xl);
+  background: rgb(0 0 0 / 0.2);
+  font-size: var(--mantine-font-size-md);
+  font-weight: 500;
+}
+
+.logos-hub-night .logos-hub-pills > span {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.logos-hub-green .logos-hub-pills > span,
+.logos-hub-orange .logos-hub-pills > span {
+  background: rgb(255 255 255 / 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logos-hub-tile::after,
+  .logos-hub-arrow {
+    transition: none;
+  }
+
+  a.logos-hub-tile:hover::after,
+  a.logos-hub-tile:hover .logos-hub-arrow {
+    transform: none;
+  }
 }

@@ -1,10 +1,10 @@
 import {
   Alert,
   Anchor,
+  Box,
   Button,
   Checkbox,
   List,
-  Paper,
   PasswordInput,
   Stack,
   Text,
@@ -34,26 +34,25 @@ export function ProfilePanel() {
   }
   return (
     <Stack gap="lg">
-      <Title order={1} fz={{ base: 28, sm: 32 }}>
-        Профиль
-      </Title>
-      <NameForm name={subject.name} />
-      <EmailForm email={subject.email} />
-      <PasswordForm email={subject.email} />
+      <Title order={1}>Профиль</Title>
+      <Stack gap={0} style={{ borderTop: '2px solid var(--mantine-color-ink-6)' }}>
+        <NameForm name={subject.name} />
+        <EmailForm email={subject.email} />
+        <PasswordForm email={subject.email} />
+      </Stack>
     </Stack>
   )
 }
 
+/** Раздел настроек: название слева, форма справа; на телефоне — друг под другом. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Paper withBorder radius="md" p={{ base: 'md', sm: 'lg' }} bg="white">
-      <Stack gap="md">
-        <Title order={2} fz="lg">
-          {title}
-        </Title>
+    <Box component="section" aria-label={title} className="logos-settings-row">
+      <Title order={2}>{title}</Title>
+      <Stack gap="md" maw={480}>
         {children}
       </Stack>
-    </Paper>
+    </Box>
   )
 }
 

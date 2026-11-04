@@ -32,46 +32,52 @@ export function SessionHeader({ managerLinks }: { managerLinks?: ReactNode }) {
     setPending(false)
   }
 
-  const who =
-    subject.type === 'administrator' ? 'Администратор' : `${subject.name} · ${subject.email}`
-
   return (
-    <Group justify="space-between" wrap="wrap" gap="sm" px="md" py="sm">
-      <Group gap="md" wrap="wrap">
-        <Anchor component={Link} to="/" fw={600} c="dark" underline="never">
+    <Group justify="space-between" wrap="wrap" gap="sm" px="lg">
+      <Group gap="lg" wrap="wrap">
+        <Anchor component={Link} to="/" fw={700} fz="xl" c="white" underline="never" mr="sm">
           Logos
         </Anchor>
         {subject.type === 'administrator' && (
           <>
-            <Anchor component={Link} to="/employees" size="sm">
+            <Link to="/employees" className="logos-nav">
               Сотрудники
-            </Anchor>
-            <Anchor component={Link} to="/channels" size="sm">
+            </Link>
+            <Link to="/channels" className="logos-nav">
               Каналы
-            </Anchor>
-            <Anchor component={Link} to="/tag-catalog" size="sm">
+            </Link>
+            <Link to="/tag-catalog" className="logos-nav">
               Теги
-            </Anchor>
+            </Link>
           </>
         )}
         {subject.type === 'manager' && (
           <>
             {managerLinks}
-            <Anchor component={Link} to="/profile" size="sm">
+            <Link to="/profile" className="logos-nav">
               Профиль
-            </Anchor>
+            </Link>
           </>
         )}
       </Group>
       <Group gap="sm" wrap="wrap">
-        <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-          {who}
-        </Text>
-        <Button size="xs" variant="default" onClick={handleLogout} loading={pending}>
+        {subject.type === 'administrator' ? (
+          <Text size="sm" c="gray.4">
+            Администратор
+          </Text>
+        ) : (
+          <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+            {subject.name}{' '}
+            <Text span size="sm" c="gray.4">
+              {subject.email}
+            </Text>
+          </Text>
+        )}
+        <Button size="compact-sm" variant="white" onClick={handleLogout} loading={pending}>
           Выйти
         </Button>
         {error && (
-          <Text size="xs" c="red" role="alert">
+          <Text size="xs" c="red.3" role="alert">
             {error}
           </Text>
         )}

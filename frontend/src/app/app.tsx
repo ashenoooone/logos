@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { SessionProvider } from '@/modules/session'
 
 import { createQueryClient } from './config/query-client'
-import { appTheme } from './config/theme'
+import { appTheme, cssVariablesResolver } from './config/theme'
 import { router } from './router'
 
 export function App() {
@@ -14,7 +14,7 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <MantineProvider theme={appTheme}>
+      <MantineProvider theme={appTheme} cssVariablesResolver={cssVariablesResolver}>
         <SessionProvider>
           <RouterProvider router={router} />
         </SessionProvider>

@@ -1,4 +1,5 @@
-import { Anchor, Badge, CloseButton, Group, MultiSelect, Select, Text } from '@mantine/core'
+import { Anchor, Badge, Chip, CloseButton, Group, Stack, Text, Title } from '@mantine/core'
+import type { ReactNode } from 'react'
 
 import type { Tag } from '@/modules/tags'
 
@@ -17,7 +18,19 @@ const STATUSES = [
   { value: 'read', label: 'Всё прочитано' },
 ]
 
-/** Панель «Входящих» (#7): сортировка, фильтры, сохранённые наборы, число найденных. */
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Stack gap="xs" role="group" aria-label={label}>
+      <Text fw={600}>{label}</Text>
+      <Group gap={6}>{children}</Group>
+    </Stack>
+  )
+}
+
+/**
+ * Колонка фильтров «Входящих» (#7): сортировка, фильтры пилюлями, сохранённые наборы,
+ * число найденных. Пустой выбор в группе фильтра значит «любой».
+ */
 export function InboxToolbar({
   sort,
   onSort,
@@ -41,50 +54,73 @@ export function InboxToolbar({
   onSaveCurrent: (() => void) | null
   onDeleteSaved: (id: number) => void
 }) {
-  const filterProps = { size: 'xs', clearable: true, w: 200, comboboxProps: { width: 240 } } as const
   return (
-    <>
-      <Group gap="sm" wrap="wrap" align="center">
-        <Text size="sm">Сортировка:</Text>
-        <Select
-          aria-label="Сортировка"
-          size="xs"
-          w={200}
-          allowDeselect={false}
-          data={SORTS}
-          value={sort}
-          onChange={(value) => value && onSort(value as Sort)}
-        />
-        <Text size="sm">Фильтры:</Text>
-        <MultiSelect
-          {...filterProps}
-          aria-label="Канал"
-          placeholder={filters.channel.length ? undefined : 'Канал'}
-          data={CHANNELS}
+    <Stack gap="lg">
+      <Stack gap={2}>
+        <Title order={1}>Входящие</Title>
+        <Text size="sm" c="dimmed">
+          найдено {found}
+        </Text>
+      </Stack>
+
+      <Section label="Сортировка">
+        <Chip.Group value={sort} onChange={(value) => onSort(value as Sort)}>
+          {SORTS.map((item) => (
+            <Chip key={item.value} value={item.value}>
+              {item.label}
+            </Chip>
+          ))}
+        </Chip.Group>
+      </Section>
+
+      <Section label="Канал">
+        <Chip.Group
+          multiple
           value={filters.channel}
           onChange={(value) => onFilters({ ...filters, channel: value as Filters['channel'] })}
-        />
-        <MultiSelect
-          {...filterProps}
-          aria-label="Статус"
-          placeholder={filters.status.length ? undefined : 'Статус'}
-          data={STATUSES}
+        >
+          {CHANNELS.map((item) => (
+            <Chip key={item.value} value={item.value}>
+              {item.label}
+            </Chip>
+          ))}
+        </Chip.Group>
+      </Section>
+
+      <Section label="Статус">
+        <Chip.Group
+          multiple
           value={filters.status}
           onChange={(value) => onFilters({ ...filters, status: value as Filters['status'] })}
-        />
-        <MultiSelect
-          {...filterProps}
-          aria-label="Тег"
-          placeholder={filters.tag.length ? undefined : 'Тег'}
-          searchable
-          nothingFoundMessage="Тегов нет"
-          data={tags.map((tag) => ({ value: String(tag.id), label: tag.name }))}
+        >
+          {STATUSES.map((item) => (
+            <Chip key={item.value} value={item.value}>
+              {item.label}
+            </Chip>
+          ))}
+        </Chip.Group>
+      </Section>
+
+      <Section label="Теги">
+        {tags.length === 0 && (
+          <Text size="sm" c="dimmed">
+            Тегов нет
+          </Text>
+        )}
+        <Chip.Group
+          multiple
           value={filters.tag.map(String)}
           onChange={(value) => onFilters({ ...filters, tag: value.map(Number) })}
-        />
-      </Group>
-      <Group gap={6} wrap="wrap">
-        <Text size="sm">★ Сохранённые:</Text>
+        >
+          {tags.map((tag) => (
+            <Chip key={tag.id} value={String(tag.id)}>
+              {tag.name}
+            </Chip>
+          ))}
+        </Chip.Group>
+      </Section>
+
+      <Section label="Сохранённые">
         {saved.length === 0 && (
           <Text size="sm" c="dimmed">
             нет
@@ -93,9 +129,9 @@ export function InboxToolbar({
         {saved.map((item) => (
           <Badge
             key={item.id}
+            size="lg"
             variant="light"
             color="violet"
-            tt="none"
             style={{ cursor: 'pointer' }}
             onClick={() => onApplySaved(item.filters)}
             rightSection={
@@ -115,13 +151,10 @@ export function InboxToolbar({
         ))}
         {onSaveCurrent && (
           <Anchor component="button" size="sm" onClick={onSaveCurrent}>
-            · сохранить текущие
+            сохранить текущие
           </Anchor>
         )}
-        <Text size="sm" c="dimmed">
-          · найдено {found}
-        </Text>
-      </Group>
-    </>
+      </Section>
+    </Stack>
   )
 }

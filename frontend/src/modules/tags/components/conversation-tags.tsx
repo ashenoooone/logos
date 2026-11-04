@@ -107,7 +107,7 @@ export function ConversationTags({ conversationId, tags }: { conversationId: num
                   <Text size="sm" truncate>
                     {tag.name}{' '}
                     <Text span size="xs" c="dimmed">
-                      · {tag.conversation_count} {tag.standard ? '· стандартный' : ''}
+                      ({tag.conversation_count}){tag.standard ? ', стандартный' : ''}
                     </Text>
                   </Text>
                 </UnstyledButton>

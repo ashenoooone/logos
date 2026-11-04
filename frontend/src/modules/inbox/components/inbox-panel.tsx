@@ -8,6 +8,7 @@ import {
   Button,
   CloseButton,
   FileButton,
+  Flex,
   Group,
   Image,
   Loader,
@@ -52,7 +53,8 @@ import {
 } from '../api/inbox'
 import { InboxToolbar } from './inbox-toolbar'
 
-const HEIGHT = 'calc(100dvh - 230px)'
+// Рамка во весь экран под шапкой (≈49px) и отступами страницы.
+const HEIGHT = 'calc(100dvh - 90px)'
 
 const FILTER_LABELS: Record<keyof Filters, string> = { channel: 'Канал', status: 'Статус', tag: 'Тег' }
 
@@ -91,9 +93,9 @@ function formatSize(bytes: number | null) {
     return ''
   }
   if (bytes < 1024 * 1024) {
-    return ` · ${Math.max(1, Math.round(bytes / 1024))} КБ`
+    return ` (${Math.max(1, Math.round(bytes / 1024))} КБ)`
   }
-  return ` · ${(bytes / 1024 / 1024).toFixed(1)} МБ`
+  return ` (${(bytes / 1024 / 1024).toFixed(1)} МБ)`
 }
 
 function preview(message: Message | null) {
@@ -105,7 +107,7 @@ function preview(message: Message | null) {
     return `${prefix}Неподдерживаемое сообщение`
   }
   if (message.file && !message.text) {
-    return `${prefix}📎 ${message.file.name}`
+    return `${prefix}Файл: ${message.file.name}`
   }
   return `${prefix}${message.text ?? ''}`
 }
@@ -220,99 +222,103 @@ export function InboxPanel() {
   const active = (Object.keys(FILTER_LABELS) as (keyof Filters)[]).filter((key) => filters[key].length > 0)
 
   return (
-    <Stack gap="sm">
-      <InboxToolbar
-        sort={sort}
-        onSort={changeSort}
-        filters={filters}
-        onFilters={applyFilters}
-        tags={tags}
-        saved={prefs?.saved_filters ?? []}
-        found={rows.length}
-        onApplySaved={(saved) =>
-          // Удалённые с тех пор теги из набора выпадают.
-          applyFilters({ ...NO_FILTERS, ...saved, tag: saved.tag.filter((id) => tags.some((tag) => tag.id === id)) })
-        }
-        onSaveCurrent={hasFilters(filters) ? saveCurrent : null}
-        onDeleteSaved={(id) => void savePreferences(() => deleteSavedFilter(id))}
-      />
-      {notice && (
-        <Alert color="red" role="alert" withCloseButton onClose={() => setNotice(null)}>
-          {notice}
-        </Alert>
-      )}
-      <Paper withBorder radius="md" style={{ display: 'flex', height: HEIGHT, overflow: 'hidden' }}>
-        <Box
-          w={{ base: '100%', sm: 340 }}
-          display={{ base: selectedId === null ? 'flex' : 'none', sm: 'flex' }}
-          style={{ flexDirection: 'column', borderRight: '1px solid var(--mantine-color-gray-3)' }}
-        >
-          <Group gap={6} px="md" py="sm" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
-            <Text fw={600} size="sm">
-              Все каналы
-            </Text>
-            <Text size="sm" c="dimmed">
-              · непрочитанных {value.unread_total}
-            </Text>
-          </Group>
-          {fresh > 0 && (
-            <UnstyledButton
-              onClick={() => setSnapshot(null)}
-              py={6}
-              ta="center"
-              c="blue"
-              fz="sm"
-              style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
-            >
-              ↑ {newMessages(fresh)} — Показать
-            </UnstyledButton>
-          )}
-          <ScrollArea style={{ flex: 1 }}>
-            {value.conversations.length === 0 && (
-              <Text size="sm" c="dimmed" p="md">
-                Пока нет диалогов. Сообщения клиентов из подключённых мессенджеров появятся здесь.
+    <Flex direction={{ base: 'column', md: 'row' }} gap="xl" align={{ base: 'stretch', md: 'flex-start' }}>
+      <Box w={{ md: 260 }} style={{ flexShrink: 0 }}>
+        <InboxToolbar
+          sort={sort}
+          onSort={changeSort}
+          filters={filters}
+          onFilters={applyFilters}
+          tags={tags}
+          saved={prefs?.saved_filters ?? []}
+          found={rows.length}
+          onApplySaved={(saved) =>
+            // Удалённые с тех пор теги из набора выпадают.
+            applyFilters({ ...NO_FILTERS, ...saved, tag: saved.tag.filter((id) => tags.some((tag) => tag.id === id)) })
+          }
+          onSaveCurrent={hasFilters(filters) ? saveCurrent : null}
+          onDeleteSaved={(id) => void savePreferences(() => deleteSavedFilter(id))}
+        />
+      </Box>
+      <Stack gap="sm" style={{ flex: 1, minWidth: 0 }}>
+        {notice && (
+          <Alert color="red" role="alert" withCloseButton onClose={() => setNotice(null)}>
+            {notice}
+          </Alert>
+        )}
+        <Paper withBorder style={{ display: 'flex', height: HEIGHT, overflow: 'hidden' }}>
+          <Box
+            w={{ base: '100%', sm: 340 }}
+            display={{ base: selectedId === null ? 'flex' : 'none', sm: 'flex' }}
+            style={{ flexDirection: 'column', borderRight: '1px solid var(--mantine-color-gray-3)' }}
+          >
+            <Group gap="sm" px="md" py="sm" bg="gray.0" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
+              <Text fw={600} size="sm">
+                Все каналы
               </Text>
+              <Text size="sm" c="dimmed">
+                непрочитанных {value.unread_total}
+              </Text>
+            </Group>
+            {fresh > 0 && (
+              <UnstyledButton
+                onClick={() => setSnapshot(null)}
+                py={6}
+                ta="center"
+                c="blue"
+                fz="sm"
+                style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+              >
+                Показать {newMessages(fresh)}
+              </UnstyledButton>
             )}
-            {value.conversations.length > 0 && rows.length === 0 && active.length > 0 && (
-              <Stack gap="xs" p="md" align="flex-start">
-                <Text size="sm">По этим фильтрам ничего не найдено.</Text>
-                <Group gap="xs">
-                  {active.map((key) => (
-                    <Button key={key} size="compact-xs" variant="default" onClick={() => applyFilters({ ...filters, [key]: [] })}>
-                      Сбросить «{FILTER_LABELS[key]}»
-                    </Button>
-                  ))}
-                </Group>
-                <Button size="xs" onClick={() => applyFilters(NO_FILTERS)}>
-                  Сбросить все фильтры
-                </Button>
-              </Stack>
-            )}
-            {rows.map((item) => (
-              <ConversationRow
-                key={item.id}
-                item={item}
-                active={item.id === selectedId}
-                onSelect={() => setSelectedId(item.id)}
-              />
-            ))}
-          </ScrollArea>
-        </Box>
+            <ScrollArea style={{ flex: 1 }}>
+              {value.conversations.length === 0 && (
+                <Text size="sm" c="dimmed" p="md">
+                  Пока нет диалогов. Сообщения клиентов из подключённых мессенджеров появятся здесь.
+                </Text>
+              )}
+              {value.conversations.length > 0 && rows.length === 0 && active.length > 0 && (
+                <Stack gap="xs" p="md" align="flex-start">
+                  <Text size="sm">По этим фильтрам ничего не найдено.</Text>
+                  <Group gap="xs">
+                    {active.map((key) => (
+                      <Button key={key} size="compact-xs" variant="default" onClick={() => applyFilters({ ...filters, [key]: [] })}>
+                        Сбросить «{FILTER_LABELS[key]}»
+                      </Button>
+                    ))}
+                  </Group>
+                  <Button size="xs" onClick={() => applyFilters(NO_FILTERS)}>
+                    Сбросить все фильтры
+                  </Button>
+                </Stack>
+              )}
+              {rows.map((item) => (
+                <ConversationRow
+                  key={item.id}
+                  item={item}
+                  active={item.id === selectedId}
+                  onSelect={() => setSelectedId(item.id)}
+                />
+              ))}
+            </ScrollArea>
+          </Box>
 
-        <Box
-          style={{ flex: 1, minWidth: 0, flexDirection: 'column' }}
-          display={{ base: selectedId === null ? 'none' : 'flex', sm: 'flex' }}
-        >
-          {selectedId === null ? (
-            <Text c="dimmed" m="auto" p="md">
-              Выберите диалог
-            </Text>
-          ) : (
-            <ThreadView key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} />
-          )}
-        </Box>
-      </Paper>
-    </Stack>
+          <Box
+            style={{ flex: 1, minWidth: 0, flexDirection: 'column' }}
+            display={{ base: selectedId === null ? 'none' : 'flex', sm: 'flex' }}
+          >
+            {selectedId === null ? (
+              <Text c="dimmed" m="auto" p="md">
+                Выберите диалог
+              </Text>
+            ) : (
+              <ThreadView key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} />
+            )}
+          </Box>
+        </Paper>
+      </Stack>
+    </Flex>
   )
 }
 
@@ -331,9 +337,13 @@ function ConversationRow({
       w="100%"
       px="md"
       py="sm"
-      bg={active ? 'blue.0' : undefined}
+      bg={active ? 'gray.1' : undefined}
       aria-current={active || undefined}
-      style={{ borderBottom: '1px solid var(--mantine-color-gray-2)', display: 'block' }}
+      style={{
+        borderBottom: '1px solid var(--mantine-color-gray-2)',
+        boxShadow: active ? 'inset 3px 0 0 var(--mantine-color-ink-6)' : undefined,
+        display: 'block',
+      }}
     >
       <Group gap="sm" wrap="nowrap" align="flex-start">
         <Avatar radius="xl" color="initials" name={item.name}>
@@ -358,7 +368,7 @@ function ConversationRow({
               {preview(item.last_message)}
             </Text>
             {item.unread_count > 0 && (
-              <Badge size="sm" circle={item.unread_count < 10} aria-label={`непрочитанных: ${item.unread_count}`}>
+              <Badge size="sm" color="red" circle={item.unread_count < 10} aria-label={`непрочитанных: ${item.unread_count}`}>
                 {item.unread_count}
               </Badge>
             )}
@@ -505,12 +515,15 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
   const file = message.file
   return (
     <Paper
-      withBorder
-      p="sm"
-      radius="md"
+      px="md"
+      py="sm"
       maw="75%"
-      bg={out ? 'blue.0' : 'white'}
-      style={{ alignSelf: out ? 'flex-end' : 'flex-start' }}
+      bg={out ? 'blue.0' : 'gray.0'}
+      style={{
+        alignSelf: out ? 'flex-end' : 'flex-start',
+        // «Хвостик» пузыря — острый угол со стороны автора.
+        borderRadius: out ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+      }}
     >
       <Stack gap={6}>
         {message.kind === 'unsupported' && (
@@ -520,24 +533,26 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
         )}
         {file && message.kind === 'photo' && file.available && (
           <Group gap="sm" align="flex-end">
-            <Image src={attachmentUrl(message.id)} alt={file.name} h={160} w="auto" fit="contain" radius="sm" />
+            <Image src={attachmentUrl(message.id)} alt={file.name} h={160} w="auto" fit="contain" radius="md" />
             <Anchor href={attachmentUrl(message.id)} target="_blank" rel="noopener" size="sm">
               открыть
             </Anchor>
           </Group>
         )}
         {file && message.kind !== 'photo' && file.available && (
-          <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
-            📄 {file.name}
-            {formatSize(file.size)} ·{' '}
+          <Group gap="sm" wrap="wrap">
+            <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+              {file.name}
+              {formatSize(file.size)}
+            </Text>
             <Anchor href={attachmentUrl(message.id)} download={file.name} size="sm">
               открыть
             </Anchor>
-          </Text>
+          </Group>
         )}
         {file && !file.available && (
           <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-            📎 {file.name} — файл недоступен (больше 20 МБ или не скачался)
+            {file.name}: файл недоступен (больше 20 МБ или не скачался)
           </Text>
         )}
         {message.text && (
@@ -551,18 +566,18 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
           </Text>
           {message.status === 'delivered' && (
             <Text size="xs" c="dimmed">
-              · ✓✓ доставлено
+              ✓✓ доставлено
             </Text>
           )}
           {message.status === 'sending' && (
             <Text size="xs" c="dimmed">
-              · отправляется…
+              отправляется…
             </Text>
           )}
           {message.status === 'failed' && (
             <>
               <Text size="xs" c="red" fw={600}>
-                · Не доставлено
+                Не доставлено
               </Text>
               <Anchor component="button" size="xs" onClick={onRetry}>
                 Повторить
@@ -610,7 +625,7 @@ function Composer({ onSend }: { onSend: (text: string, file: File | null) => Pro
         {file && (
           <Group gap={4}>
             <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
-              📎 {file.name}
+              Файл: {file.name}
               {formatSize(file.size)}
             </Text>
             <CloseButton size="sm" aria-label="Убрать файл" onClick={() => setFile(null)} />
@@ -636,7 +651,10 @@ function Composer({ onSend }: { onSend: (text: string, file: File | null) => Pro
           <FileButton onChange={setFile}>
             {(props) => (
               <ActionIcon {...props} variant="default" size="lg" aria-label="Прикрепить файл">
-                📎
+                {/* скрепка, путь из Tabler Icons (MIT) */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 7l-6.5 6.5a1.5 1.5 0 0 0 3 3l6.5 -6.5a3 3 0 0 0 -6 -6l-6.5 6.5a4.5 4.5 0 0 0 9 9l6.5 -6.5" />
+                </svg>
               </ActionIcon>
             )}
           </FileButton>
