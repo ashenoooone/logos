@@ -2,101 +2,114 @@
 
 ## Goal
 
-Build a working MVP as quickly as possible without
-turning the codebase into an unmaintainable mess.
+Build working MVP fast without making codebase unmaintainable mess.
 
-Prioritize simplicity, correctness, and maintainability
-over premature optimization and overengineering.
+Prioritize simplicity, correctness, maintainability over premature optimization and overengineering.
 
 ## Project Knowledge
 
-Project documentation is stored locally:
+Project docs stored locally:
 
-- `docs/stories/` — user stories and acceptance criteria.
+- `docs/stories/` — user stories + acceptance criteria.
 - `docs/adr/` — architectural decisions.
-- `docs/domain/` — business rules and domain knowledge.
+- `docs/domain/` — business rules, domain knowledge.
+- `CONTEXT.md` — domain glossary; no implementation details.
+- `docs/stories/README.md` — GitHub mapping, snapshot dates, dependencies, refresh procedure.
+- `docs/open-questions.md` — unresolved requirements + technical decisions, grouped by implementation stage.
 
-Read only the documentation relevant to the current task.
-Do not load the entire knowledge base unnecessarily.
+## Current Baseline
+
+- Accepted choices recorded in `docs/adr/0001-project-baseline.md`.
+- Backend: Python / FastAPI. Frontend: React / Mantine UI. Database: SQLite.
+- One installation = one company. First integration: Telegram Bot API, not personal Telegram account.
+- First admin created by private deployment command, not public registration.
+- Repo currently docs only. No app, dependency manifests, migrations, or runnable checks yet.
+- When technical init implemented: replace this status, document real commands. Never invent commands or report unexecuted checks.
+
+## Requirements Sources
+
+- GitHub issues = source of user stories; local story files = verbatim snapshots.
+- Before implementing, check relevant issue body, comments, `updatedAt`; follow refresh procedure in `docs/stories/README.md`.
+- Accepted ADRs hold explicitly approved project decisions absent from original stories.
+- Keep implementation notes + progress outside imported stories.
+- Derived rules and suggested sequencing add no new acceptance criteria.
+- Resolve conflicts between issue, accepted ADR, mockup explicitly; never silently pick one.
+- Mockup links preserved in stories, but images not inspected. Don't infer missing fields, password requirements, permissions, or provider capabilities.
+
+Read only docs relevant to current task. Don't load whole knowledge base needlessly.
 
 ## Workflow
 
-When asked to implement a user story:
+When asked to implement user story:
 
-1. Find and read the relevant story in `docs/stories/`.
-2. Identify acceptance criteria and dependencies.
-3. Read relevant ADRs and domain rules.
-4. Inspect the existing code and patterns.
-5. Implement the simplest complete solution.
-6. Run relevant checks and tests.
-7. Summarize what was done and what remains.
+1. Find + read relevant story in `docs/stories/`; verify GitHub source current.
+2. Identify acceptance criteria + dependencies.
+3. Read relevant ADRs + domain rules.
+4. Inspect existing code + patterns.
+5. Implement simplest complete solution.
+6. Run relevant checks + tests.
+7. Summarize done + remaining.
 
-Do not require approval between steps unless
-there is a significant ambiguity or risk.
+No approval between steps unless significant ambiguity or risk.
 
-For complex tasks, briefly outline the approach
-before implementation. No mandatory plan files.
+Complex tasks: briefly outline approach before implementing. No mandatory plan files.
 
 ## Engineering Principles
 
 - Follow existing project conventions.
 - Prefer simple, explicit solutions.
-- Reuse existing components and utilities.
+- Reuse existing components + utilities.
 - Avoid unnecessary abstractions.
-- Do not introduce new dependencies without a good reason.
-- Do not refactor unrelated code.
-- Do not implement features outside the current scope.
-- Keep changes focused and easy to review.
-- Do not sacrifice correctness for speed.
+- No new dependencies without good reason.
+- Don't refactor unrelated code.
+- Don't implement features outside current scope.
+- Keep changes focused, easy to review.
+- Never sacrifice correctness for speed.
 
 ## MVP Rules
 
-- Implement only what the story requires.
+- Implement only what story requires.
 - Prefer working solutions over theoretical flexibility.
-- Avoid speculative features and premature optimization.
-- Temporary solutions are acceptable when they are
-  isolated, understandable, and safe.
-- Do not introduce shortcuts that compromise security,
-  data integrity, or critical business logic.
+- Avoid speculative features + premature optimization.
+- Temporary solutions OK when isolated, understandable, safe.
+- No shortcuts compromising security, data integrity, or critical business logic.
 - Document significant technical compromises briefly.
 
 ## Architecture & ADR
 
 Follow existing accepted ADRs.
 
-Create a new ADR only when making a significant
-architectural decision that affects future development.
+New ADR only for significant architectural decision affecting future development.
 
-Use a lightweight format:
+Lightweight format:
 
 - Context
 - Decision
 - Consequences
 
-Do not create ADRs for minor implementation details.
-New ADRs should remain proposed until approved.
+No ADRs for minor implementation details. New ADRs stay proposed until approved.
 
 ## Testing
 
-- Verify the story's acceptance criteria.
-- Run relevant existing tests, lint, and type checks.
-- Add tests for important business logic and regressions.
-- Do not add unnecessary tests for trivial code.
+- Verify story's acceptance criteria.
+- Run relevant existing tests, lint, type checks.
+- Add tests for important business logic + regressions.
+- No needless tests for trivial code.
 - Never claim checks passed unless executed.
 
 ## Documentation
 
 - Keep imported user stories unchanged.
-- Update documentation when behavior or architecture changes.
-- Avoid documentation that duplicates the code.
-- Keep documentation concise and useful.
+- Update docs when behavior or architecture changes.
+- Avoid docs duplicating code.
+- Keep docs concise, useful.
 
 ## Completion
 
-After implementation, provide a short summary:
+After implementation, give short summary:
 
-- What was implemented.
-- What was verified.
-- Any remaining issues or technical debt.
+- What implemented.
+- What verified.
+- Remaining issues or tech debt.
 
-Do not mark incomplete work as complete.
+Never mark incomplete work complete.
