@@ -16,15 +16,20 @@ Project docs stored locally:
 - `CONTEXT.md` — domain glossary; no implementation details.
 - `docs/stories/README.md` — GitHub mapping, snapshot dates, dependencies, refresh procedure.
 - `docs/open-questions.md` — unresolved requirements + technical decisions, grouped by implementation stage.
+- `docs/backend-contract.md` — implemented HTTP endpoints, errors, CLI behavior.
 
 ## Current Baseline
 
-- Accepted choices recorded in `docs/adr/0001-project-baseline.md`.
-- Backend: Python / FastAPI. Frontend: React / Mantine UI. Database: SQLite.
+- Accepted choices recorded in `docs/adr/0001-project-baseline.md` and `docs/adr/0002-backend-initialization.md`.
+- Backend: Python 3.13 + uv, FastAPI + Uvicorn, sync SQLAlchemy 2 + Alembic, argon2-cffi; pytest, Ruff, mypy. Versions pinned in `uv.lock`.
+- Frontend: React / Mantine UI chosen but **not initialized** — no frontend code, build or tooling yet.
+- Database: SQLite file. Path from `LOGOS_DATABASE_PATH`, default `data/logos.sqlite3` relative to the working directory. `.env` is not loaded automatically. Migrations only via explicit `uv run alembic upgrade head`.
 - One installation = one company. First integration: Telegram Bot API, not personal Telegram account.
-- First admin created by private deployment command, not public registration.
-- Repo currently docs only. No app, dependency manifests, migrations, or runnable checks yet.
-- When technical init implemented: replace this status, document real commands. Never invent commands or report unexecuted checks.
+- First admin created by private interactive command, not public registration: `uv run logos-backend create-admin --login <login>`; one row enforced in the DB; rerun never changes the existing admin.
+- Backend implemented: single `GET /health` readiness endpoint, `administrators` migration, first-admin CLI. Contract in `docs/backend-contract.md`.
+- No user story implemented: no login, sessions, registration, invitations, channels, messages, frontend, or admin HTTP API.
+- Commands: `uv sync --locked`, `uv run alembic upgrade head`, `uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1`, `uv run pytest -q`, `uv run ruff check .`, `uv run mypy src tests`. Run from repo root.
+- Never invent commands or report unexecuted checks.
 
 ## Requirements Sources
 
