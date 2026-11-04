@@ -13,6 +13,7 @@ const backendProxy = {
   '/account': 'http://127.0.0.1:8000',
   '/conversations': 'http://127.0.0.1:8000',
   '/messages': 'http://127.0.0.1:8000',
+  '/tags': 'http://127.0.0.1:8000',
 }
 
 export default defineConfig({

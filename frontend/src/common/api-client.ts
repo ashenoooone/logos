@@ -73,9 +73,19 @@ export async function apiPost<T = unknown>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<ApiResponse<T>> {
+  return apiSend<T>('POST', path, body, signal)
+}
+
+/** Небезопасный JSON-запрос любым методом; CSRF и ошибки как у `apiPost`. */
+export async function apiSend<T = unknown>(
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<ApiResponse<T>> {
   const token = await csrfToken(signal)
   const response = await fetch(path, {
-    method: 'POST',
+    method,
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',

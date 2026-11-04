@@ -49,6 +49,9 @@ export function SessionHeader({ managerLinks }: { managerLinks?: ReactNode }) {
             <Anchor component={Link} to="/channels" size="sm">
               Каналы
             </Anchor>
+            <Anchor component={Link} to="/tag-catalog" size="sm">
+              Теги
+            </Anchor>
           </>
         )}
         {subject.type === 'manager' && (

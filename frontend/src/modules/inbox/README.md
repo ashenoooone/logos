@@ -1,10 +1,13 @@
 # Inbox
 
-«Входящие» менеджера (#6): `GET /conversations`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/read`, `POST /conversations/{id}/messages`, `POST /conversations/{id}/files`, `POST /messages/{id}/retry`, `GET /messages/{id}/attachment`.
+«Входящие» менеджера (#6): `GET /conversations`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/read`, `POST /conversations/{id}/messages`, `POST /conversations/{id}/files`, `POST /messages/{id}/retry`, `GET /messages/{id}/attachment`; #7 — `GET /conversations/preferences`, `PUT /conversations/preferences/sort`, `POST|DELETE /conversations/saved-filters`.
 
 ## Публичный API
 
 - `InboxPanel` — список диалогов (свежие сверху, непрочитанные у диалога и общее число) и открытый диалог: переписка, фото и документы, ответ текстом или с файлом, «доставлено» / «Не доставлено» + «Повторить». Открытый диалог помечается прочитанным.
 - `InboxNavLink` — пункт меню «Входящие» с общим счётчиком; пока менеджер в приложении — счётчик на вкладке браузера и звук на новое входящее.
+
+- Сортировка (новые/старые/непрочитанные сверху, сохраняется на сервере), фильтры канал/статус/тег с отдельным сбросом, «найдено N», пустое состояние со «Сбросить все фильтры», сохранённые наборы. Фильтрация на клиенте. Порядок списка — снимок: новые сообщения дают плашку «N новых сообщений — Показать».
+- Теги диалога — `ConversationTags` и `TagBadge` из модуля `tags`.
 
 Список и диалог опрашиваются раз в 4 с (ADR-0007). `401` сбрасывает сессию.

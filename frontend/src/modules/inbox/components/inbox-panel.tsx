@@ -23,11 +23,19 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { failureMessage } from '@/common/api-client'
 import { useSession } from '@/modules/session'
+import { ConversationTags, TagBadge, tagsQueryOptions } from '@/modules/tags'
 
 import {
+  arrange,
   attachmentUrl,
   conversationsQueryOptions,
+  deleteSavedFilter,
+  hasFilters,
   markRead,
+  NO_FILTERS,
+  preferencesQueryOptions,
+  saveFilter,
+  saveSort,
   MAX_CAPTION_LENGTH,
   MAX_FILE_BYTES,
   MAX_TEXT_LENGTH,
@@ -36,11 +44,29 @@ import {
   sendReply,
   threadQueryOptions,
   type ConversationSummary,
+  type Filters,
   type Message,
+  type Preferences,
   type Result,
+  type Sort,
 } from '../api/inbox'
+import { InboxToolbar } from './inbox-toolbar'
 
-const HEIGHT = 'calc(100dvh - 140px)'
+const HEIGHT = 'calc(100dvh - 230px)'
+
+const FILTER_LABELS: Record<keyof Filters, string> = { channel: 'Канал', status: 'Статус', tag: 'Тег' }
+
+function newMessages(count: number) {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${count} новое сообщение`
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${count} новых сообщения`
+  }
+  return `${count} новых сообщений`
+}
 
 function initials(name: string) {
   const letters = name
@@ -84,12 +110,21 @@ function preview(message: Message | null) {
   return `${prefix}${message.text ?? ''}`
 }
 
-/** «Входящие» (#6): единый список диалогов и открытый диалог с ответом. */
+/**
+ * «Входящие» (#6, #7): список диалогов с сортировкой и фильтрами и открытый диалог.
+ * Порядок списка зафиксирован снимком: новые сообщения не переставляют диалоги,
+ * а показывают плашку «N новых сообщений»; «Показать» берёт новый снимок.
+ */
 export function InboxPanel() {
   const { setSubject } = useSession()
   const queryClient = useQueryClient()
   const list = useQuery(conversationsQueryOptions)
+  const preferences = useQuery(preferencesQueryOptions)
+  const allTags = useQuery(tagsQueryOptions)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const [snapshot, setSnapshot] = useState<{ ids: number[]; incoming: number } | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const data = list.data
   const unauthorized = data?.kind === 'unauthorized'
@@ -100,6 +135,18 @@ export function InboxPanel() {
   }, [unauthorized, setSubject])
 
   const value = data?.kind === 'success' ? data.value : null
+  const prefs = preferences.data?.kind === 'success' ? preferences.data.value : null
+  const sort = prefs?.sort ?? 'newest'
+  const ids = snapshot?.ids ?? (value ? arrange(value.conversations, sort, filters) : [])
+  const fresh = value && snapshot ? value.incoming_total - snapshot.incoming : 0
+
+  // Снимок берётся, когда списка ещё нет (открытие, смена сортировки/фильтров, «Показать»).
+  useEffect(() => {
+    if (value && !preferences.isPending && snapshot === null) {
+      setSnapshot({ ids: arrange(value.conversations, sort, filters), incoming: value.incoming_total })
+    }
+  }, [value, preferences.isPending, snapshot, sort, filters])
+
   const selected = value?.conversations.find((item) => item.id === selectedId) ?? null
   const selectedUnread = selected?.unread_count ?? 0
 
@@ -113,7 +160,45 @@ export function InboxPanel() {
       .catch(() => undefined)
   }, [selectedId, selectedUnread, queryClient])
 
-  if (list.isPending || unauthorized) {
+  function applyFilters(next: Filters) {
+    setFilters(next)
+    setSnapshot(null)
+  }
+
+  /** Сохраняет настройки на сервере; ответ заменяет кэш предпочтений. */
+  async function savePreferences(action: () => Promise<Result<Preferences>>) {
+    setNotice(null)
+    try {
+      const result = await action()
+      if (result.kind === 'success') {
+        queryClient.setQueryData(preferencesQueryOptions.queryKey, result)
+      } else if (result.kind === 'unauthorized') {
+        setSubject(null)
+      } else {
+        setNotice(result.kind === 'failed' ? failureMessage(result.status) : failureMessage(404))
+      }
+    } catch {
+      setNotice(failureMessage())
+    }
+  }
+
+  function changeSort(next: Sort) {
+    if (prefs) {
+      const optimistic: Result<Preferences> = { kind: 'success', value: { ...prefs, sort: next } }
+      queryClient.setQueryData(preferencesQueryOptions.queryKey, optimistic)
+    }
+    setSnapshot(null)
+    void savePreferences(() => saveSort(next))
+  }
+
+  function saveCurrent() {
+    const name = window.prompt('Название набора фильтров')?.trim()
+    if (name) {
+      void savePreferences(() => saveFilter(name.slice(0, 50), filters))
+    }
+  }
+
+  if (list.isPending || preferences.isPending || unauthorized) {
     return <Loader aria-label="Загрузка диалогов" />
   }
   if (!value) {
@@ -129,51 +214,105 @@ export function InboxPanel() {
     )
   }
 
-  return (
-    <Paper withBorder radius="md" style={{ display: 'flex', height: HEIGHT, overflow: 'hidden' }}>
-      <Box
-        w={{ base: '100%', sm: 340 }}
-        display={{ base: selectedId === null ? 'flex' : 'none', sm: 'flex' }}
-        style={{ flexDirection: 'column', borderRight: '1px solid var(--mantine-color-gray-3)' }}
-      >
-        <Group gap={6} px="md" py="sm" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
-          <Text fw={600} size="sm">
-            Все каналы
-          </Text>
-          <Text size="sm" c="dimmed">
-            · непрочитанных {value.unread_total}
-          </Text>
-        </Group>
-        <ScrollArea style={{ flex: 1 }}>
-          {value.conversations.length === 0 && (
-            <Text size="sm" c="dimmed" p="md">
-              Пока нет диалогов. Сообщения клиентов из подключённых мессенджеров появятся здесь.
-            </Text>
-          )}
-          {value.conversations.map((item) => (
-            <ConversationRow
-              key={item.id}
-              item={item}
-              active={item.id === selectedId}
-              onSelect={() => setSelectedId(item.id)}
-            />
-          ))}
-        </ScrollArea>
-      </Box>
+  const byId = new Map(value.conversations.map((item) => [item.id, item]))
+  const rows = ids.flatMap((id) => byId.get(id) ?? [])
+  const tags = allTags.data?.status === 200 ? (allTags.data.data.tags ?? []) : []
+  const active = (Object.keys(FILTER_LABELS) as (keyof Filters)[]).filter((key) => filters[key].length > 0)
 
-      <Box
-        style={{ flex: 1, minWidth: 0, flexDirection: 'column' }}
-        display={{ base: selectedId === null ? 'none' : 'flex', sm: 'flex' }}
-      >
-        {selectedId === null ? (
-          <Text c="dimmed" m="auto" p="md">
-            Выберите диалог
-          </Text>
-        ) : (
-          <ThreadView key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} />
-        )}
-      </Box>
-    </Paper>
+  return (
+    <Stack gap="sm">
+      <InboxToolbar
+        sort={sort}
+        onSort={changeSort}
+        filters={filters}
+        onFilters={applyFilters}
+        tags={tags}
+        saved={prefs?.saved_filters ?? []}
+        found={rows.length}
+        onApplySaved={(saved) =>
+          // Удалённые с тех пор теги из набора выпадают.
+          applyFilters({ ...NO_FILTERS, ...saved, tag: saved.tag.filter((id) => tags.some((tag) => tag.id === id)) })
+        }
+        onSaveCurrent={hasFilters(filters) ? saveCurrent : null}
+        onDeleteSaved={(id) => void savePreferences(() => deleteSavedFilter(id))}
+      />
+      {notice && (
+        <Alert color="red" role="alert" withCloseButton onClose={() => setNotice(null)}>
+          {notice}
+        </Alert>
+      )}
+      <Paper withBorder radius="md" style={{ display: 'flex', height: HEIGHT, overflow: 'hidden' }}>
+        <Box
+          w={{ base: '100%', sm: 340 }}
+          display={{ base: selectedId === null ? 'flex' : 'none', sm: 'flex' }}
+          style={{ flexDirection: 'column', borderRight: '1px solid var(--mantine-color-gray-3)' }}
+        >
+          <Group gap={6} px="md" py="sm" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
+            <Text fw={600} size="sm">
+              Все каналы
+            </Text>
+            <Text size="sm" c="dimmed">
+              · непрочитанных {value.unread_total}
+            </Text>
+          </Group>
+          {fresh > 0 && (
+            <UnstyledButton
+              onClick={() => setSnapshot(null)}
+              py={6}
+              ta="center"
+              c="blue"
+              fz="sm"
+              style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+            >
+              ↑ {newMessages(fresh)} — Показать
+            </UnstyledButton>
+          )}
+          <ScrollArea style={{ flex: 1 }}>
+            {value.conversations.length === 0 && (
+              <Text size="sm" c="dimmed" p="md">
+                Пока нет диалогов. Сообщения клиентов из подключённых мессенджеров появятся здесь.
+              </Text>
+            )}
+            {value.conversations.length > 0 && rows.length === 0 && active.length > 0 && (
+              <Stack gap="xs" p="md" align="flex-start">
+                <Text size="sm">По этим фильтрам ничего не найдено.</Text>
+                <Group gap="xs">
+                  {active.map((key) => (
+                    <Button key={key} size="compact-xs" variant="default" onClick={() => applyFilters({ ...filters, [key]: [] })}>
+                      Сбросить «{FILTER_LABELS[key]}»
+                    </Button>
+                  ))}
+                </Group>
+                <Button size="xs" onClick={() => applyFilters(NO_FILTERS)}>
+                  Сбросить все фильтры
+                </Button>
+              </Stack>
+            )}
+            {rows.map((item) => (
+              <ConversationRow
+                key={item.id}
+                item={item}
+                active={item.id === selectedId}
+                onSelect={() => setSelectedId(item.id)}
+              />
+            ))}
+          </ScrollArea>
+        </Box>
+
+        <Box
+          style={{ flex: 1, minWidth: 0, flexDirection: 'column' }}
+          display={{ base: selectedId === null ? 'none' : 'flex', sm: 'flex' }}
+        >
+          {selectedId === null ? (
+            <Text c="dimmed" m="auto" p="md">
+              Выберите диалог
+            </Text>
+          ) : (
+            <ThreadView key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} />
+          )}
+        </Box>
+      </Paper>
+    </Stack>
   )
 }
 
@@ -224,6 +363,13 @@ function ConversationRow({
               </Badge>
             )}
           </Group>
+          {item.tags.length > 0 && (
+            <Group gap={4} mt={4}>
+              {item.tags.map((tag) => (
+                <TagBadge key={tag.id} tag={tag} />
+              ))}
+            </Group>
+          )}
         </Box>
       </Group>
     </UnstyledButton>
@@ -324,6 +470,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
           Telegram
         </Badge>
       </Group>
+      <ConversationTags conversationId={id} tags={thread.conversation.tags} />
 
       <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
         <Stack gap="sm" py="md">

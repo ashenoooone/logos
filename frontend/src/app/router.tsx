@@ -17,6 +17,7 @@ import { LoginPage } from '@/pages/login/login-page'
 import { NotFoundPage } from '@/pages/not-found/not-found-page'
 import { PasswordResetPage } from '@/pages/password-reset/password-reset-page'
 import { ProfilePage } from '@/pages/profile/profile-page'
+import { TagCatalogPage } from '@/pages/tag-catalog/tag-catalog-page'
 
 import { AdministratorLayout } from './layouts/administrator-layout'
 import { AnonymousLayout } from './layouts/anonymous-layout'
@@ -25,7 +26,8 @@ import { ManagerLayout } from './layouts/manager-layout'
 import { RootLayout } from './layouts/root-layout'
 
 // SPA-пути не должны начинаться с API-префиксов из vite.config.ts
-// (/health, /auth, /admin, /invitations, /password-reset/, /account, /conversations, /messages).
+// (/health, /auth, /admin, /invitations, /password-reset/, /account, /conversations, /messages,
+// /tags).
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -77,6 +79,11 @@ const routeTree = rootRoute.addChildren([
         getParentRoute: () => administratorRoute,
         path: '/channels',
         component: ChannelsPage,
+      }),
+      createRoute({
+        getParentRoute: () => administratorRoute,
+        path: '/tag-catalog',
+        component: TagCatalogPage,
       }),
     ]),
     managerRoute.addChildren([
