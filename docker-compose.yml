@@ -6,3 +6,26 @@ services:
       # с remo-site (1025/8025).
       - "127.0.0.1:1026:1025"
       - "127.0.0.1:8026:8025"
+
+  backend:
+    build: .
+    environment:
+      LOGOS_ALLOWED_ORIGINS: http://localhost:8080
+      LOGOS_PUBLIC_BASE_URL: http://localhost:8080
+      LOGOS_SMTP_HOST: mailpit
+      LOGOS_SMTP_PORT: "1025"
+    volumes:
+      # SQLite + attachments/ рядом с ним.
+      - logos-data:/app/data
+    depends_on:
+      - mailpit
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  logos-data:

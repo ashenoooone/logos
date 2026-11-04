@@ -73,6 +73,10 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 
 `--forwarded-allow-ips` должен содержать только адрес доверенного прокси, не `*`.
 
+Всё сразу в Docker (mailpit + backend + frontend на nginx): `scripts/up.sh` — собирает образы, применяет миграции (с тестовым админом `admin`/`admin`, отключить `LOGOS_DEV_ADMIN=0`), поднимает на `http://localhost:8080`, Mailpit на `http://localhost:8026`. База и вложения в volume `logos-data`. Остановить: `docker compose down`.
+
+Разработка с hot reload: `scripts/dev.sh` — mailpit в Docker, `uv sync`, миграции (тот же тестовый админ), `pnpm install`, затем uvicorn `--reload` на `127.0.0.1:8000` и Vite на `http://localhost:5173`. Ctrl+C останавливает оба. База — локальная `data/logos.sqlite3`, не volume.
+
 Для локального перехвата писем используется Mailpit из `docker-compose.yml`. Порты опубликованы только на loopback и не совпадают с портами remo-site:
 
 ```sh
@@ -138,6 +142,10 @@ uv run logos-backend create-admin --login root
 - Коды завершения: `0` — создан; `1` — администратор уже есть, БД не готова, ошибка ввода, хеширования или хранения пароля/записи; `2` — неверные аргументы, включая пустой логин.
 
 Команда не создаёт публичной регистрации. Созданный администратор входит через `POST /auth/admin/login` с тем же логином и паролем; контракт входа — в [docs/backend-contract.md](docs/backend-contract.md). Если `create-admin` сообщает о неготовой БД, сначала выполните `uv run alembic upgrade head`.
+
+### Демо-данные
+
+`scripts/dev.sh` и `scripts/up.sh` по умолчанию заполняют пустую базу фейковыми данными (миграция `0009`, `LOGOS_DEMO_SEED=1`): менеджеры `anna@demo.logos`, `igor@demo.logos`, `maria@demo.logos` с паролем `demo1234`, теги, диалоги и демо-бот, если задан `LOGOS_DEMO_BOT_TOKEN` (токен только из окружения, в репозитории его нет). Отключить: `LOGOS_DEMO_SEED=0`. Уже заполненная база не меняется — для демо начните с новой.
 
 ### Проверки
 
