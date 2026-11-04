@@ -124,8 +124,11 @@ def _call(
             raise InvalidTokenError from None
         if exc.code == 409:
             raise TelegramConflictError from None
+        logger.warning("Telegram Bot API %s: HTTP %s", method, exc.code)
         raise TelegramUnavailableError from None
-    except (URLError, OSError, ValueError):
+    except (URLError, OSError, ValueError) as exc:
+        # str(URLError) не содержит URL, токен в лог не попадает.
+        logger.warning("Telegram Bot API %s: %s", method, exc)
         raise TelegramUnavailableError from None
     if not isinstance(body, dict) or body.get("ok") is not True:
         raise TelegramUnavailableError
@@ -145,7 +148,8 @@ def download_file(token: str, file_id: str, max_bytes: int) -> bytes | None:
             timeout=FILE_TIMEOUT_SECONDS,
         ) as response:
             content: bytes = response.read(max_bytes + 1)
-    except (URLError, OSError, ValueError):
+    except (URLError, OSError, ValueError) as exc:
+        logger.warning("Telegram file download: %s", exc)
         raise TelegramUnavailableError from None
     return None if len(content) > max_bytes else content
 
