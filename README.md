@@ -120,7 +120,9 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1
 
 Проверка готовности: `curl http://127.0.0.1:8000/health` → `200 {"status":"ok"}` после применённых миграций, иначе `503 {"detail":"Database is not ready"}`. Точный контракт — в [docs/backend-contract.md](docs/backend-contract.md).
 
-Многопроцессную схему не настраивать: SQLite рассчитан на одного писателя.
+Многопроцессную схему не настраивать: SQLite рассчитан на одного писателя, а фоновый опрос Telegram (`getUpdates`) должен идти ровно в одном процессе.
+
+Бэкенду нужен исходящий HTTPS к `api.telegram.org`. Python с python.org на macOS по умолчанию не видит системные корневые сертификаты, и запросы к Bot API падают с `CERTIFICATE_VERIFY_FAILED` (бэкенд отвечает `502`). Решение — один раз выполнить `/Applications/Python 3.13/Install Certificates.command` или задать `SSL_CERT_FILE` с файлом корневых сертификатов.
 
 ### Создание первого администратора
 

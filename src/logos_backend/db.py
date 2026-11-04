@@ -42,6 +42,7 @@ ONE_TIME_LINKS_TABLE = "one_time_links"
 LOGIN_ATTEMPTS_TABLE = "login_attempts"
 PASSWORD_RESET_REQUESTS_TABLE = "password_reset_requests"
 EMAIL_CHANGES_TABLE = "email_changes"
+CHANNELS_TABLE = "channels"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -52,6 +53,7 @@ REQUIRED_TABLES = frozenset(
         LOGIN_ATTEMPTS_TABLE,
         PASSWORD_RESET_REQUESTS_TABLE,
         EMAIL_CHANGES_TABLE,
+        CHANNELS_TABLE,
     }
 )
 
@@ -168,6 +170,26 @@ email_changes = Table(
     Column("created_at", Integer, nullable=False),
     Column("expires_at", Integer, nullable=False),
     CheckConstraint("expires_at > created_at", name="ck_email_changes_expiry"),
+)
+
+# Один Telegram-бот на установку (ADR-0007): строка с id=1. Отключение очищает
+# токен, но строку не удаляет — переписка из #6 будет ссылаться на канал.
+channels = Table(
+    CHANNELS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("bot_username", String, nullable=False),
+    Column("token", String, nullable=True),
+    Column("status", String, nullable=False),
+    Column("error", String, nullable=True),
+    Column("update_offset", Integer, nullable=False),
+    Column("connected_at", Integer, nullable=False),
+    Column("updated_at", Integer, nullable=False),
+    CheckConstraint("id = 1", name="ck_channels_single"),
+    CheckConstraint(
+        "status IN ('connected', 'error', 'disconnected')", name="ck_channels_status"
+    ),
 )
 
 Index(

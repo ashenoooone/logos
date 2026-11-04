@@ -1,20 +1,27 @@
 """FastAPI-приложение: готовность БД, аутентификация, приглашения и восстановление.
 
 Единое приложение подключает роутеры ``web_auth``, ``web_managers``,
-``web_recovery`` и ``web_account``; отдельного приложения для продуктовых маршрутов нет.
+``web_recovery``, ``web_account`` и ``web_channels``; отдельного приложения для
+продуктовых маршрутов нет. Lifespan запускает фоновый опрос Telegram.
 """
 
 
 from __future__ import annotations
+
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
+from logos_backend import channels
 from logos_backend.db import is_database_ready
 from logos_backend.web_account import router as account_router
 from logos_backend.web_auth import router as auth_router
+from logos_backend.web_channels import router as channels_router
 from logos_backend.web_managers import router as managers_router
 from logos_backend.web_recovery import router as recovery_router
 
@@ -23,8 +30,26 @@ from logos_backend.web_recovery import router as recovery_router
 # символа в UTF-8) и служебную обвязку.
 MAX_REQUEST_BODY_BYTES = 16 * 1024
 
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Опрос Telegram в фоновом потоке; daemon не держит процесс на long poll."""
+    stop = threading.Event()
+    poller = threading.Thread(
+        target=channels.run_poller, args=(stop,), name="telegram-poller", daemon=True
+    )
+    poller.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        poller.join(timeout=1)
+
+
 app = FastAPI(
     title="Logos",
+    lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -36,6 +61,7 @@ app.include_router(auth_router)
 app.include_router(managers_router)
 app.include_router(recovery_router)
 app.include_router(account_router)
+app.include_router(channels_router)
 
 
 @app.exception_handler(RequestValidationError)
