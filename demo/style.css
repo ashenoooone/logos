@@ -1,0 +1,218 @@
+/* Цвета и формы из frontend/src/app/config/theme.ts и global.css. */
+:root {
+  --ink: #222222;
+  --night: #21212a;
+  --dim: #6b6b6b;
+  --line: #e6e6e6;
+  --bg-soft: #f6f6f6;
+  --blue: #2270b8;
+  --blue-soft: #e9f4ff;
+  --red: #e0302b;
+  --violet: #844bec;
+  --green: #26ad50;
+  --orange: #fc7630;
+  --g-violet: linear-gradient(135deg, #844bec 0%, #c2389a 100%);
+  --g-green: linear-gradient(135deg, #26ad50 0%, #a6d96a 100%);
+  --g-orange: linear-gradient(135deg, #fc7630 0%, #ffc94a 100%);
+  --g-night: linear-gradient(135deg, #21212a 0%, #3d2d6e 100%);
+  --glow: radial-gradient(circle at 100% 0%, rgb(255 255 255 / 0.28), transparent 55%);
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 20px rgba(33, 33, 42, 0.1);
+}
+
+.slidev-layout {
+  background: #fff;
+  color: var(--ink);
+  padding: 2.4rem 3.2rem;
+  font-size: 1rem;
+}
+
+.slidev-layout h1 {
+  font-size: 2.6rem;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+/* Тема по умолчанию тянет абзац под h1 вверх и фиксирует line-height 1.5rem — крупный текст наезжает. */
+.slidev-layout p {
+  line-height: 1.4;
+}
+
+.slidev-layout h1 + p {
+  margin-top: 0.9rem;
+  opacity: 1;
+}
+
+.kicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.lead {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--dim);
+  max-width: 34rem;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.9rem;
+  border-radius: 160px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--bg-soft);
+}
+
+.pill-dark {
+  background: var(--ink);
+  color: #fff;
+}
+
+.card {
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: 1.2rem 1.4rem;
+}
+
+.tile {
+  border-radius: 24px;
+  padding: 1.4rem 1.6rem;
+}
+
+.tile-violet { background: var(--glow), var(--g-violet); color: #fff; }
+.tile-night { background: var(--glow), var(--g-night); color: #fff; }
+.tile-green { background: var(--glow), var(--g-green); color: var(--ink); }
+.tile-orange { background: var(--glow), var(--g-orange); color: var(--ink); }
+
+/* Тёмные полноэкранные слайды: обложка, разделители, финал. */
+.slidev-layout.dark-slide,
+.dark-slide {
+  background: var(--night);
+  color: #fff;
+}
+
+.dark-slide .kicker { color: #c4c4c4; }
+
+.act {
+  color: #fff;
+}
+
+.act .kicker { color: rgb(255 255 255 / 0.8); }
+
+.act-violet { background: var(--glow), var(--g-violet); }
+.act-night { background: var(--glow), var(--g-night); }
+.act-orange { background: var(--glow), var(--g-orange); color: var(--ink); }
+.act-orange .kicker { color: rgb(34 34 34 / 0.7); }
+
+/* Слайд истории. */
+.story {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.story-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.role {
+  padding: 0.25rem 0.85rem;
+  border-radius: 160px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.role-admin { background: var(--g-violet); color: #fff; }
+.role-manager { background: var(--g-green); color: var(--ink); }
+
+.story-title {
+  margin-top: 0.6rem !important;
+  font-size: 2.1rem !important;
+}
+
+.story-quote {
+  margin: 0.5rem 0 0 !important;
+  font-size: 0.95rem;
+  color: var(--dim);
+  max-width: 44rem;
+}
+
+.story-body {
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  gap: 1.6rem;
+  margin-top: 1.1rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.story-criteria ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: c;
+}
+
+.story-criteria li {
+  counter-increment: c;
+  position: relative;
+  padding: 0.45rem 0 0.45rem 2.1rem;
+  margin: 0 !important;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--line);
+}
+
+.story-criteria li::before {
+  content: counter(c, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.story-criteria strong {
+  font-weight: 600;
+}
+
+.story-mockup {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.story-mockup img {
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  background: #fff;
+  padding: 0.6rem;
+  max-height: 300px;
+  width: 100%;
+  object-fit: contain;
+}
+
+.story-mockup figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
