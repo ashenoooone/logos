@@ -12,7 +12,7 @@
 - Документация отключена: `GET /docs`, `GET /redoc`, `GET /openapi.json` возвращают `404` с телом `{"detail":"Not Found"}`.
 - Неизвестный путь — `404` `{"detail":"Not Found"}`; неподдерживаемый метод для существующего пути — `405` `{"detail":"Method Not Allowed"}` с заголовком `Allow`. Это стандартное поведение фреймворка.
 - Успешные ответы и прикладные ошибки — `application/json`. Единственное исключение — превышение размера тела: `413` с `text/plain` и телом `Content Too Large`.
-- Тело любого запроса ограничено **16 КиБ**. Превышение отклоняется до разбора JSON и до записи в БД.
+- Тело любого запроса ограничено **16 КиБ**, кроме загрузки файла ответа `POST /conversations/{id}/files` — **20 МиБ**. Превышение отклоняется до разбора тела и до записи в БД.
 - Ошибка разбора тела и ограничений полей — `422 {"detail": "<безопасное описание>", "field": "<имя поля>"}`. Исходные `password`, `token` и `input` не возвращаются. Для прикладных ошибок форма та же.
 - CORS не настроен: заголовков `Access-Control-Allow-*` нет. Браузерный фронтенд должен работать на том же origin, что и API.
 - Ответы, содержащие субъекта, CSRF-токен или состояние ссылки, имеют `Cache-Control: no-store`.
@@ -196,8 +196,29 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 
 - Токен проверяется форматом `<id>:<секрет>` до запроса и `getMe` в Bot API (`401`/`404` → неверный). Неверный токен канал не меняет.
 - Подключение вызывает `deleteWebhook(drop_pending_updates)`: накопленные до подключения сообщения не забираются.
-- Фоновый поток (lifespan приложения) вызывает `getUpdates` с таймаутом 25 с. `401`/`404` → `status=error`, `error=token_invalid`; `409` (обновления забирает другое приложение) → `error=conflict`. Опрос канала в `error` останавливается до переподключения тем же `POST /admin/channels/telegram`. Сетевые сбои статус не меняют — повтор через 5 с. Обновления пока только подтверждаются (`update_offset`), сохранение сообщений — #6.
+- Фоновый поток (lifespan приложения) вызывает `getUpdates` с таймаутом 25 с. `401`/`404` → `status=error`, `error=token_invalid`; `409` (обновления забирает другое приложение) → `error=conflict`. Опрос канала в `error` останавливается до переподключения тем же `POST /admin/channels/telegram`. Сетевые сбои статус не меняют — повтор через 5 с. Сообщения сохраняются (см. «Входящие») до сдвига `update_offset`.
 - Отключение стирает токен, строку канала оставляет.
+
+## Входящие (#6)
+
+Только менеджер (`401` без сессии, `403` администратору); все `POST` требуют CSRF. Источник решений — ADR-0007.
+
+| Эндпоинт | Тело | Успех | Ошибки |
+|---|---|---|---|
+| `GET /conversations` | — | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message"}],"unread_total","last_incoming_id"}`; свежие сверху | — |
+| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name"},"messages":[…]}`; вся переписка по порядку | `404` |
+| `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
+| `POST /conversations/{id}/messages` | `{"text"}` (1–4096 после trim) | `200 {"message"}`, `status` = `delivered`/`failed` | `422 field=text`; `404` |
+| `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
+| `POST /messages/{id}/retry` | — | `200 {"message"}` | `409` — ответ не в статусе `failed` |
+| `GET /messages/{id}/attachment` | — | файл: фото — `image/jpeg` inline, документ — `application/octet-stream` attachment; `nosniff`, `CSP: sandbox` | `404` |
+
+`message`: `{"id","direction":"in"|"out","kind":"text"|"photo"|"document"|"unsupported","text","file":{"name","size","available"}|null,"status":null|"sending"|"delivered"|"failed","created_at"}`.
+
+- Принимаются только личные чаты (`chat.type=private`); прочие обновления подтверждаются и отбрасываются. Дубль по паре чат + `message_id` не сохраняется.
+- Фото — самый большой размер, имя `photo.jpg`; документ — исходное имя. Файл скачивается `getFile` (Bot API: до 20 МБ); больше или сбой — `available=false`, сообщение сохраняется.
+- Ответ сначала сохраняется (`sending`), затем уходит в Bot API: успешный ответ API → `delivered`, любая ошибка или таймаут → `failed` (ADR-0007). Повтор только вручную; повторная отправка может дать дубль у клиента.
+- `last_incoming_id` — id последнего входящего сообщения; фронтенд по его росту подаёт звук.
 
 ## Схема данных
 
@@ -210,6 +231,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0003` | `password_reset_requests` |
 | `0004` | `email_changes` |
 | `0005` | `channels` |
+| `0006` | `conversations`, `messages` + индексы `ix_messages_conversation`, частичный уникальный `uq_messages_incoming` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -217,6 +239,8 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `one_time_links`: уникальный `token_hash`, `purpose` (`invitation`/`password_reset`), `consumed_at`/`revoked_at`, `expires_at > created_at`. Частичный уникальный индекс не даёт иметь больше одной активной ссылки на менеджера и назначение.
 - `email_changes`: одна неподтверждённая смена на менеджера (уникальный `manager_id`), уникальный `token_hash`, новый адрес и его нормализованная форма; подтверждение удаляет строку.
 - `channels`: одна строка (`id=1`), `status` ∈ `connected`/`error`/`disconnected`, код ошибки, токен **открытым текстом** (ADR-0007; `NULL` после отключения), `update_offset` для `getUpdates`, `connected_at` отличает переподключения от устаревших результатов опроса.
+- `conversations`: диалог = личный чат Telegram, уникальный `chat_id`, имя клиента, `last_message_at`.
+- `messages`: `direction` `in`/`out`, `kind`, текст/подпись, имя/размер файла, `file_path` — имя файла в `attachments/` рядом с SQLite (отдаётся только через API). У входящих `read_at` (общая прочитанность), у исходящих `status`. Частичный уникальный индекс `(conversation_id, telegram_message_id) WHERE direction='in'` отсекает дубли.
 - `login_attempts`: ключ `(scope, identifier)`, счётчик и время блокировки; `scope` ограничен `administrator`/`manager`.
 - `password_reset_requests`: ключ `email_normalized`, время последнего разрешённого запроса. Отдельная таблица, а не `login_attempts`, потому что семантика ограничения восстановления иная.
 
@@ -266,9 +290,9 @@ SMTP-пароль и токены не должны попадать в `VITE_*`
 ## Развёртывание и reverse proxy
 
 - Браузер и API должны быть на одном origin; CORS не настроен.
-- Reverse proxy маршрутизирует в бэкенд **до** SPA fallback как минимум `/health`, `/auth/*`, `/admin/*`, `/invitations/*`, `/password-reset/*`, сохраняя статус и тело ответа. Остальные пути могут отдавать `index.html`.
+- Reverse proxy маршрутизирует в бэкенд **до** SPA fallback как минимум `/health`, `/auth/*`, `/admin/*`, `/invitations/*`, `/password-reset/*`, `/account/*`, `/conversations*`, `/messages/*`, сохраняя статус и тело ответа. Остальные пути могут отдавать `index.html`.
 - При завершении TLS на прокси Uvicorn запускается с явными `--proxy-headers --forwarded-allow-ips <доверенный прокси>`, иначе `Secure` cookie не выставится.
-- Vite dev/preview проксирует `/health`, `/auth`, `/admin`, `/invitations`, `/password-reset/` (со слешем: SPA-страница `/password-reset` не проксируется). SPA-маршруты не начинаются с этих префиксов. Vite не является production-сервером.
+- Vite dev/preview проксирует `/health`, `/auth`, `/admin`, `/invitations`, `/password-reset/`, `/account`, `/conversations`, `/messages` (со слешем: SPA-страница `/password-reset` не проксируется). SPA-маршруты не начинаются с этих префиксов. Vite не является production-сервером.
 
 ## Что заведомо не реализовано
 
@@ -276,6 +300,7 @@ SMTP-пароль и токены не должны попадать в `VITE_*`
 - Восстановление пароля администратора.
 - Внешняя почтовая доставка и подтверждение доставки; очередь и автоматические повторы.
 - CORS, метрики, трассировка, health-проверки внешних сервисов, OpenAPI.
-- Каналы, диалоги, сообщения и любые другие продуктовые HTTP-эндпоинты.
+- Сортировка, фильтры, теги (#7, #8); постраничность переписки; WebSocket/SSE.
+- Типы сообщений Telegram кроме текста, фото и документов (показываются как неподдерживаемые); группы и каналы Telegram.
 
 Любой другой путь или метод, кроме описанных здесь, не является частью контракта, даже если фреймворк отвечает на него стандартной ошибкой.

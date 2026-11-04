@@ -1,13 +1,14 @@
 """FastAPI-приложение: готовность БД, аутентификация, приглашения и восстановление.
 
 Единое приложение подключает роутеры ``web_auth``, ``web_managers``,
-``web_recovery``, ``web_account`` и ``web_channels``; отдельного приложения для
+``web_recovery``, ``web_account``, ``web_channels`` и ``web_inbox``; отдельного приложения для
 продуктовых маршрутов нет. Lifespan запускает фоновый опрос Telegram.
 """
 
 
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -16,12 +17,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from logos_backend import channels
+from logos_backend import channels, inbox
 from logos_backend.db import is_database_ready
 from logos_backend.web_account import router as account_router
 from logos_backend.web_auth import router as auth_router
 from logos_backend.web_channels import router as channels_router
+from logos_backend.web_inbox import router as inbox_router
 from logos_backend.web_managers import router as managers_router
 from logos_backend.web_recovery import router as recovery_router
 
@@ -29,7 +32,21 @@ from logos_backend.web_recovery import router as recovery_router
 # JSON. 16 КиБ с запасом вмещают максимальные поля входа (две строки по 1024
 # символа в UTF-8) и служебную обвязку.
 MAX_REQUEST_BODY_BYTES = 16 * 1024
+# Файл ответа клиенту (#6) — единственный маршрут с большим телом.
+MAX_UPLOAD_BYTES = inbox.MAX_FILE_BYTES
+UPLOAD_PATH = re.compile(r"/conversations/\d+/files")
 
+
+class BodyLimit:
+    """Предел тела запроса: большой только для загрузки файла ответа."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.small = RequestBodyLimitMiddleware(app, max_body_size=MAX_REQUEST_BODY_BYTES)
+        self.large = RequestBodyLimitMiddleware(app, max_body_size=MAX_UPLOAD_BYTES)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        upload = scope["type"] == "http" and UPLOAD_PATH.fullmatch(scope["path"])
+        await (self.large if upload else self.small)(scope, receive, send)
 
 
 @asynccontextmanager
@@ -55,13 +72,14 @@ app = FastAPI(
     openapi_url=None,
 )
 
-app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_REQUEST_BODY_BYTES)
+app.add_middleware(BodyLimit)
 
 app.include_router(auth_router)
 app.include_router(managers_router)
 app.include_router(recovery_router)
 app.include_router(account_router)
 app.include_router(channels_router)
+app.include_router(inbox_router)
 
 
 @app.exception_handler(RequestValidationError)

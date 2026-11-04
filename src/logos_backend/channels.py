@@ -1,5 +1,7 @@
 """Канал Telegram: подключение бота по токену, отключение и фоновый long polling.
 
+Опрос передаёт полученные сообщения в ``inbox`` (#6).
+
 Решения ADR-0007: один бот на установку, ``getUpdates`` вместо webhook, токен
 хранится открытым текстом и наружу не отдаётся. При (пере)подключении
 накопленные обновления сбрасываются: принимаются только новые сообщения.
@@ -11,10 +13,11 @@ import json
 import logging
 import re
 import threading
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from sqlalchemy import select, update
@@ -32,6 +35,7 @@ TOKEN_PATTERN = re.compile(r"\d{1,20}:[A-Za-z0-9_-]{20,100}")
 DEFAULT_NAME = "Telegram"
 POLL_TIMEOUT_SECONDS = 25
 REQUEST_TIMEOUT_SECONDS = 10
+FILE_TIMEOUT_SECONDS = 60
 IDLE_SECONDS = 2.0
 RETRY_SECONDS = 5.0
 
@@ -72,15 +76,46 @@ class Channel:
     updated_at: int
 
 
-def _call(token: str, method: str, params: dict[str, Any], timeout: float) -> Any:
-    """Вызывает метод Bot API.
+def _multipart(params: dict[str, Any], file: tuple[str, str, bytes]) -> tuple[bytes, str]:
+    """Тело multipart/form-data: поля ``params`` и один файл ``(поле, имя, данные)``."""
+    boundary = uuid.uuid4().hex
+    field, name, content = file
+    safe_name = re.sub(r'["\\\r\n]', "_", name)
+    parts = [
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode()
+        for key, value in params.items()
+    ]
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; '
+        f'filename="{safe_name}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()
+        + content
+        + b"\r\n"
+    )
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def _call(
+    token: str,
+    method: str,
+    params: dict[str, Any],
+    timeout: float,
+    file: tuple[str, str, bytes] | None = None,
+) -> Any:
+    """Вызывает метод Bot API; ``file`` отправляется multipart-запросом.
 
     Исключения поднимаются ``from None``: исходная ошибка urllib содержит URL с
     токеном и не должна попасть в трассировку или лог.
     """
     if not TOKEN_PATTERN.fullmatch(token):
         raise InvalidTokenError
-    request = Request(f"{API_BASE}/bot{token}/{method}", data=urlencode(params).encode())
+    if file is None:
+        request = Request(f"{API_BASE}/bot{token}/{method}", data=urlencode(params).encode())
+    else:
+        data, content_type = _multipart(params, file)
+        request = Request(
+            f"{API_BASE}/bot{token}/{method}", data=data, headers={"Content-Type": content_type}
+        )
     try:
         with urlopen(request, timeout=timeout) as response:
             body = json.load(response)
@@ -95,6 +130,24 @@ def _call(token: str, method: str, params: dict[str, Any], timeout: float) -> An
     if not isinstance(body, dict) or body.get("ok") is not True:
         raise TelegramUnavailableError
     return body.get("result")
+
+
+def download_file(token: str, file_id: str, max_bytes: int) -> bytes | None:
+    """Скачивает файл через ``getFile``; ``None``, если он больше ``max_bytes``."""
+    info = _call(token, "getFile", {"file_id": file_id}, REQUEST_TIMEOUT_SECONDS)
+    if not isinstance(info, dict) or not isinstance(info.get("file_path"), str):
+        raise TelegramUnavailableError
+    if int(info.get("file_size") or 0) > max_bytes:
+        return None
+    try:
+        with urlopen(
+            f"{API_BASE}/file/bot{token}/{quote(info['file_path'])}",
+            timeout=FILE_TIMEOUT_SECONDS,
+        ) as response:
+            content: bytes = response.read(max_bytes + 1)
+    except (URLError, OSError, ValueError):
+        raise TelegramUnavailableError from None
+    return None if len(content) > max_bytes else content
 
 
 def check_token(token: str) -> str:
@@ -123,6 +176,19 @@ def get_channel() -> Channel | None:
     finally:
         engine.dispose()
     return None if row is None else _row_to_channel(row)
+
+
+def current_token() -> str | None:
+    """Токен подключённого канала; ``None``, если отправлять некуда."""
+    engine = _create_engine()
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(select(channels.c.status, channels.c.token)).first()
+    finally:
+        engine.dispose()
+    if row is None or row.status != CONNECTED or not row.token:
+        return None
+    return str(row.token)
 
 
 def _current_status() -> str | None:
@@ -234,10 +300,15 @@ def poll_once() -> bool:
         )
         return True
 
-    ids = [item["update_id"] for item in updates or [] if isinstance(item, dict)]
-    if ids:
-        # ponytail: обновления пока только подтверждаются; сохранение сообщений — #6.
-        _save_poll_result(connected_at, {"update_offset": max(ids) + 1})
+    from logos_backend import inbox  # inbox импортирует channels: цикл на уровне модуля
+
+    items = [item for item in updates or [] if isinstance(item, dict)]
+    for item in items:
+        # Сохраняем до сдвига offset: при сбое обновление придёт снова, дубль
+        # отсечёт уникальность пары диалог + message_id (ADR-0007).
+        inbox.store_update(str(row["token"]), item)
+    if items:
+        _save_poll_result(connected_at, {"update_offset": max(i["update_id"] for i in items) + 1})
     return True
 
 

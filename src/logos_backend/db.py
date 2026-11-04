@@ -43,9 +43,13 @@ LOGIN_ATTEMPTS_TABLE = "login_attempts"
 PASSWORD_RESET_REQUESTS_TABLE = "password_reset_requests"
 EMAIL_CHANGES_TABLE = "email_changes"
 CHANNELS_TABLE = "channels"
+CONVERSATIONS_TABLE = "conversations"
+MESSAGES_TABLE = "messages"
 
 REQUIRED_TABLES = frozenset(
     {
+        CONVERSATIONS_TABLE,
+        MESSAGES_TABLE,
         ADMINISTRATORS_TABLE,
         MANAGERS_TABLE,
         SESSIONS_TABLE,
@@ -190,6 +194,40 @@ channels = Table(
     CheckConstraint(
         "status IN ('connected', 'error', 'disconnected')", name="ck_channels_status"
     ),
+)
+
+# Диалог = личный чат клиента с ботом (ADR-0007); chat_id — id чата Telegram.
+conversations = Table(
+    CONVERSATIONS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("chat_id", Integer, nullable=False, unique=True),
+    Column("name", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("last_message_at", Integer, nullable=False),
+)
+
+# Входящие (direction='in') прочитаны, когда read_at задан; у исходящих — status.
+messages = Table(
+    MESSAGES_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("direction", String, nullable=False),
+    Column("telegram_message_id", Integer, nullable=True),
+    Column("kind", String, nullable=False),
+    Column("text", String, nullable=True),
+    Column("file_name", String, nullable=True),
+    Column("file_size", Integer, nullable=True),
+    Column("file_path", String, nullable=True),
+    Column("status", String, nullable=True),
+    Column("created_at", Integer, nullable=False),
+    Column("read_at", Integer, nullable=True),
 )
 
 Index(
