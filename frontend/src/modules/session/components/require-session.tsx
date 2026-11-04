@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { useSession } from '../hooks/use-session'
 
-export type SessionAccess = 'anonymous' | 'authenticated' | 'administrator'
+export type SessionAccess = 'anonymous' | 'authenticated' | 'administrator' | 'manager'
 
 /** Guard маршрута: аноним уходит на вход, вошедший — со страниц входа на главную. */
 export function RequireSession({
@@ -21,7 +21,7 @@ export function RequireSession({
   if (!subject) {
     return <Navigate to="/login" replace />
   }
-  if (access === 'administrator' && subject.type !== 'administrator') {
+  if (access !== 'authenticated' && subject.type !== access) {
     return <Navigate to="/" replace />
   }
   return children

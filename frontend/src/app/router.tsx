@@ -7,20 +7,23 @@ import {
 
 import { AdminLoginPage } from '@/pages/admin-login/admin-login-page'
 import { EmployeesPage } from '@/pages/employees/employees-page'
+import { EmailConfirmationPage } from '@/pages/email-confirmation/email-confirmation-page'
 import { ForgotPasswordPage } from '@/pages/forgot-password/forgot-password-page'
 import { HomePage } from '@/pages/home/home-page'
 import { InvitationPage } from '@/pages/invitation/invitation-page'
 import { LoginPage } from '@/pages/login/login-page'
 import { NotFoundPage } from '@/pages/not-found/not-found-page'
 import { PasswordResetPage } from '@/pages/password-reset/password-reset-page'
+import { ProfilePage } from '@/pages/profile/profile-page'
 
 import { AdministratorLayout } from './layouts/administrator-layout'
 import { AnonymousLayout } from './layouts/anonymous-layout'
 import { AuthenticatedLayout } from './layouts/authenticated-layout'
+import { ManagerLayout } from './layouts/manager-layout'
 import { RootLayout } from './layouts/root-layout'
 
 // SPA-пути не должны начинаться с API-префиксов из vite.config.ts
-// (/health, /auth, /admin, /invitations, /password-reset/).
+// (/health, /auth, /admin, /invitations, /password-reset/, /account).
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -45,6 +48,12 @@ const administratorRoute = createRoute({
   component: AdministratorLayout,
 })
 
+const managerRoute = createRoute({
+  getParentRoute: () => authenticatedRoute,
+  id: 'manager',
+  component: ManagerLayout,
+})
+
 const routeTree = rootRoute.addChildren([
   anonymousRoute.addChildren([
     createRoute({ getParentRoute: () => anonymousRoute, path: '/login', component: LoginPage }),
@@ -52,11 +61,6 @@ const routeTree = rootRoute.addChildren([
       getParentRoute: () => anonymousRoute,
       path: '/login/admin',
       component: AdminLoginPage,
-    }),
-    createRoute({
-      getParentRoute: () => anonymousRoute,
-      path: '/forgot-password',
-      component: ForgotPasswordPage,
     }),
   ]),
   authenticatedRoute.addChildren([
@@ -68,13 +72,27 @@ const routeTree = rootRoute.addChildren([
         component: EmployeesPage,
       }),
     ]),
+    managerRoute.addChildren([
+      createRoute({ getParentRoute: () => managerRoute, path: '/profile', component: ProfilePage }),
+    ]),
   ]),
+  // Восстановление доступно и из профиля («Забыли пароль?»), поэтому без guard анонима.
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/forgot-password',
+    component: ForgotPasswordPage,
+  }),
   // Ссылки из писем открываются в любом состоянии сессии: успех создаёт новую сессию.
   createRoute({ getParentRoute: () => rootRoute, path: '/invitation', component: InvitationPage }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/password-reset',
     component: PasswordResetPage,
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/email-confirmation',
+    component: EmailConfirmationPage,
   }),
 ])
 

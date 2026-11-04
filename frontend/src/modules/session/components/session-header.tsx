@@ -45,6 +45,11 @@ export function SessionHeader() {
             Сотрудники
           </Anchor>
         )}
+        {subject.type === 'manager' && (
+          <Anchor component={Link} to="/profile" size="sm">
+            Профиль
+          </Anchor>
+        )}
       </Group>
       <Group gap="sm" wrap="wrap">
         <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
