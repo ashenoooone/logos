@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,16 @@ def migrate() -> None:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
     command.upgrade(config, "head")
+
+
+def execute_sql(database: Path, *statements: str) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        for statement in statements:
+            connection.execute(statement)
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def test_unmigrated_database_is_not_ready(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -46,6 +57,38 @@ def test_missing_database_directory_is_not_ready(
 def test_migrated_database_is_ready(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOGOS_DATABASE_PATH", str(tmp_path / "logos.sqlite3"))
     migrate()
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_missing_required_table_with_unrelated_table_is_not_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "logos.sqlite3"
+    monkeypatch.setenv("LOGOS_DATABASE_PATH", str(database))
+    migrate()
+    execute_sql(
+        database,
+        "DROP TABLE sessions",
+        "CREATE TABLE unrelated (id INTEGER PRIMARY KEY)",
+    )
+
+    response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Database is not ready"}
+
+
+def test_unrelated_table_does_not_break_ready_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "logos.sqlite3"
+    monkeypatch.setenv("LOGOS_DATABASE_PATH", str(database))
+    migrate()
+    execute_sql(database, "CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
 
     response = client.get("/health")
 
