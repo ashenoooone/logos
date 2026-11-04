@@ -2,13 +2,21 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { jsonResponse, MANAGER_SUBJECT } from './test/backend-mock'
 import { renderApp } from './test/render-app'
 
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
+type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+/** Главная доступна только с сессией: /auth/me отвечает менеджером, остальное — `health`. */
+function stubHealth(health: FetchFn) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === '/auth/me'
+        ? Promise.resolve(jsonResponse({ subject: MANAGER_SUBJECT }))
+        : health(input, init),
+    ),
+  )
 }
 
 afterEach(() => {
@@ -18,7 +26,7 @@ afterEach(() => {
 describe('главный экран', () => {
   it('показывает загрузку, затем готовность по успешному ответу', async () => {
     const { promise, resolve } = Promise.withResolvers<Response>()
-    vi.stubGlobal('fetch', vi.fn(() => promise))
+    stubHealth(vi.fn(() => promise))
 
     renderApp()
 
@@ -34,9 +42,7 @@ describe('главный экран', () => {
   })
 
   it('показывает неготовую базу данных при HTTP 503 отдельно от успеха', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ detail: 'Database is not ready' }, 503)),
+    stubHealth(vi.fn(async () => jsonResponse({ detail: 'Database is not ready' }, 503)),
     )
 
     renderApp()
@@ -50,9 +56,7 @@ describe('главный экран', () => {
   })
 
   it('показывает сетевую ошибку, когда запрос отклонён', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    stubHealth(vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
     )
 
     renderApp()
@@ -64,9 +68,7 @@ describe('главный экран', () => {
   })
 
   it('показывает прочий HTTP-ответ как неожиданный, не называя его сетевой ошибкой', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('', { status: 500 })),
+    stubHealth(vi.fn(async () => new Response('', { status: 500 })),
     )
 
     renderApp()
@@ -81,9 +83,7 @@ describe('главный экран', () => {
   })
 
   it('не подтверждает готовность по 200 с некорректным телом', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('not json', { status: 200 })),
+    stubHealth(vi.fn(async () => new Response('not json', { status: 200 })),
     )
 
     renderApp()
@@ -102,7 +102,7 @@ describe('главный экран', () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse({ detail: 'Database is not ready' }, 503))
       .mockImplementationOnce(() => second.promise)
-    vi.stubGlobal('fetch', fetchMock)
+    stubHealth(fetchMock)
 
     renderApp()
     expect(await screen.findByText(/HTTP 503/)).toBeInTheDocument()
@@ -124,9 +124,7 @@ describe('главный экран', () => {
   it('отменяет запрос при уходе со страницы', async () => {
     let signal: AbortSignal | undefined
     const pending = Promise.withResolvers<Response>()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+    stubHealth(vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
         signal = init?.signal ?? undefined
         return pending.promise
       }),
@@ -144,9 +142,7 @@ describe('главный экран', () => {
 
 describe('маршрутизация', () => {
   it('показывает понятную страницу для неизвестного адреса и ведёт на главную', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ status: 'ok' })),
+    stubHealth(vi.fn(async () => jsonResponse({ status: 'ok' })),
     )
 
     const user = userEvent.setup()

@@ -11,7 +11,7 @@ export function NotFoundPage() {
           c="dimmed"
           style={{ letterSpacing: '0.12em' }}
         >
-          Logos · техническая проверка
+          Logos
         </Text>
         <Title order={1} fz={{ base: 28, sm: 34 }} lh={1.1}>
           Страница не найдена

@@ -28,3 +28,12 @@ if (!window.matchMedia) {
     }),
   })
 }
+
+// jsdom не реализует ResizeObserver; он нужен Mantine Table.ScrollContainer.
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
