@@ -32,6 +32,7 @@ Project docs stored locally:
 - #7 + #8 implemented (mockup conflicts with ADR-0007 listed in `docs/open-questions.md`, not yet confirmed); no browser check by agent.
 - #5 + #6 implemented; success path with a real bot token (receiving/sending real Telegram messages) not checked by agent.
 - #1–#4 implemented (backend + frontend), not accepted: no manual browser acceptance, no end-to-end run with Mailpit by agent yet. No disabling employees, channels, messages.
+- Local test admin `admin`/`admin`: `LOGOS_DEV_ADMIN=1 uv run alembic upgrade head` (migration 0008, only if no admin yet; never set in production).
 - Commands: `uv sync --locked`, `uv run alembic upgrade head`, `uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1`, `uv run pytest -q`, `uv run ruff check .`, `uv run mypy src tests`. Run from repo root.
 - Frontend commands, from `frontend/`: `pnpm install --frozen-lockfile`, `pnpm dev`, `pnpm build`, `pnpm preview`, `pnpm lint`, `pnpm type-check`, `pnpm test`. Build output `frontend/dist/`. Vite reads frontend env files automatically; `VITE_*` is public, never store secrets there.
 - Frontend lint/types/build and 37 tests passed (2026-11-04, auth stage). Proxy split SPA/API checked by real HTTP via Vite dev. Browser tool denied by user policy (`eval`); manual browser acceptance of product screens not yet confirmed. Do not claim visual or browser interaction checks passed.

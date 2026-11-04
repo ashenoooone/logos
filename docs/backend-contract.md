@@ -262,6 +262,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0005` | `channels` |
 | `0006` | `conversations`, `messages` + индексы `ix_messages_conversation`, частичный уникальный `uq_messages_incoming` |
 | `0007` | `tags`, `conversation_tags`, `inbox_preferences`, `saved_filters` |
+| `0008` | без схемы: при `LOGOS_DEV_ADMIN=1` и пустой `administrators` создаёт тестового администратора `admin`/`admin`; без переменной ничего не делает. Только для локальной разработки |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
