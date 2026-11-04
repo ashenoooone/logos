@@ -2,9 +2,9 @@
 
 ## Goal
 
-Build working MVP fast without making codebase unmaintainable mess.
+Build working MVP as fast as possible. Speed is top priority.
 
-Prioritize simplicity, correctness, maintainability over premature optimization and overengineering.
+Prioritize shipping speed + simplicity. Keep code readable enough to extend; no overengineering, no premature optimization.
 
 ## Project Knowledge
 
@@ -56,12 +56,12 @@ When asked to implement user story:
 3. Read relevant ADRs + domain rules.
 4. Inspect existing code + patterns.
 5. Implement simplest complete solution.
-6. Run relevant checks + tests.
+6. Run lint + type checks (+ existing tests touching changed code).
 7. Summarize done + remaining.
 
-No approval between steps unless significant ambiguity or risk.
+No approval between steps unless significant ambiguity or risk. Don't stall: pick sensible default, note it in summary.
 
-Complex tasks: briefly outline approach before implementing. No mandatory plan files.
+No mandatory plan files. Outline approach only for genuinely complex tasks, in 2–3 lines.
 
 ## Engineering Principles
 
@@ -73,7 +73,7 @@ Complex tasks: briefly outline approach before implementing. No mandatory plan f
 - Don't refactor unrelated code.
 - Don't implement features outside current scope.
 - Keep changes focused, easy to review.
-- Never sacrifice correctness for speed.
+- Speed over polish, but not over correctness of core flows, security, data integrity.
 
 ## MVP Rules
 
@@ -100,10 +100,10 @@ No ADRs for minor implementation details. New ADRs stay proposed until approved.
 
 ## Testing
 
-- Verify story's acceptance criteria.
-- Run relevant existing tests, lint, type checks.
-- Add tests for important business logic + regressions.
-- No needless tests for trivial code.
+- Default: write no new tests. Lint + type checks are the baseline gate.
+- Tests only for critical logic: auth, permissions, password/token handling, data integrity invariants. Minimal coverage — one happy path + key failure case, no exhaustive suites.
+- No tests for UI components, routing, simple CRUD, trivial code.
+- Existing tests must keep passing; if change breaks one, fix or delete it if it tests removed behavior.
 - Never claim checks passed unless executed.
 
 ## Documentation
