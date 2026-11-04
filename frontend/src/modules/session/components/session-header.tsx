@@ -1,13 +1,14 @@
 import { Anchor, Button, Group, Text } from '@mantine/core'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { failureMessage } from '@/common/api-client'
 
 import { logout } from '../api/session'
 import { useSession } from '../hooks/use-session'
 
-export function SessionHeader() {
+/** `managerLinks` — пункты меню менеджера из других модулей (подставляет app). */
+export function SessionHeader({ managerLinks }: { managerLinks?: ReactNode }) {
   const { subject, setSubject } = useSession()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,9 +52,12 @@ export function SessionHeader() {
           </>
         )}
         {subject.type === 'manager' && (
-          <Anchor component={Link} to="/profile" size="sm">
-            Профиль
-          </Anchor>
+          <>
+            {managerLinks}
+            <Anchor component={Link} to="/profile" size="sm">
+              Профиль
+            </Anchor>
+          </>
         )}
       </Group>
       <Group gap="sm" wrap="wrap">

@@ -11,6 +11,7 @@ import { EmployeesPage } from '@/pages/employees/employees-page'
 import { EmailConfirmationPage } from '@/pages/email-confirmation/email-confirmation-page'
 import { ForgotPasswordPage } from '@/pages/forgot-password/forgot-password-page'
 import { HomePage } from '@/pages/home/home-page'
+import { InboxPage } from '@/pages/inbox/inbox-page'
 import { InvitationPage } from '@/pages/invitation/invitation-page'
 import { LoginPage } from '@/pages/login/login-page'
 import { NotFoundPage } from '@/pages/not-found/not-found-page'
@@ -24,7 +25,7 @@ import { ManagerLayout } from './layouts/manager-layout'
 import { RootLayout } from './layouts/root-layout'
 
 // SPA-пути не должны начинаться с API-префиксов из vite.config.ts
-// (/health, /auth, /admin, /invitations, /password-reset/, /account).
+// (/health, /auth, /admin, /invitations, /password-reset/, /account, /conversations, /messages).
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -79,6 +80,7 @@ const routeTree = rootRoute.addChildren([
       }),
     ]),
     managerRoute.addChildren([
+      createRoute({ getParentRoute: () => managerRoute, path: '/inbox', component: InboxPage }),
       createRoute({ getParentRoute: () => managerRoute, path: '/profile', component: ProfilePage }),
     ]),
   ]),

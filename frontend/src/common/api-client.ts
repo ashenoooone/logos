@@ -89,6 +89,23 @@ export async function apiPost<T = unknown>(
   return parse<T>(response)
 }
 
+/** POST с сырым телом (файл); CSRF и обработка ошибок как у `apiPost`. */
+export async function apiUpload<T = unknown>(path: string, file: Blob): Promise<ApiResponse<T>> {
+  const token = await csrfToken()
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/octet-stream',
+      'X-CSRF-Token': token,
+    },
+    body: file,
+    credentials: 'same-origin',
+    cache: 'no-store',
+  })
+  return parse<T>(response)
+}
+
 /** Текст для непредусмотренного исхода: `status` не задан — нет связи с сервисом. */
 export function failureMessage(status?: number): string {
   return status === undefined

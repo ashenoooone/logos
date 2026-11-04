@@ -11,6 +11,8 @@ const backendProxy = {
   '/invitations': 'http://127.0.0.1:8000',
   '/password-reset/': 'http://127.0.0.1:8000',
   '/account': 'http://127.0.0.1:8000',
+  '/conversations': 'http://127.0.0.1:8000',
+  '/messages': 'http://127.0.0.1:8000',
 }
 
 export default defineConfig({

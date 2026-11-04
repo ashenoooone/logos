@@ -7,15 +7,19 @@ import { renderApp } from './test/render-app'
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
-/** Главная доступна только с сессией: /auth/me отвечает менеджером, остальное — `health`. */
+/** Главная доступна только с сессией: /auth/me отвечает менеджером, /health — `health`. */
 function stubHealth(health: FetchFn) {
   vi.stubGlobal(
     'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
-      String(input) === '/auth/me'
-        ? Promise.resolve(jsonResponse({ subject: MANAGER_SUBJECT }))
-        : health(input, init),
-    ),
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/auth/me') {
+        return Promise.resolve(jsonResponse({ subject: MANAGER_SUBJECT }))
+      }
+      if (String(input) === '/conversations') {
+        return Promise.resolve(jsonResponse({ conversations: [], unread_total: 0, last_incoming_id: null }))
+      }
+      return health(input, init)
+    }),
   )
 }
 
