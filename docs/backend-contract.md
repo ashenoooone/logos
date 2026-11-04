@@ -263,6 +263,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0006` | `conversations`, `messages` + индексы `ix_messages_conversation`, частичный уникальный `uq_messages_incoming` |
 | `0007` | `tags`, `conversation_tags`, `inbox_preferences`, `saved_filters` |
 | `0008` | без схемы: при `LOGOS_DEV_ADMIN=1` и пустой `administrators` создаёт тестового администратора `admin`/`admin`; без переменной ничего не делает. Только для локальной разработки |
+| `0009` | без схемы: при `LOGOS_DEMO_SEED=1` и пустой базе (нет менеджеров и диалогов) — демо-данные из `demo_seed.py`: 3 менеджера `*@demo.logos` / `demo1234`, теги, 7 фейковых диалогов Telegram (непрочитанные, документ, «Не доставлено»), сохранённый фильтр; подключает демо-бота только при заданном `LOGOS_DEMO_BOT_TOKEN` (в коде токена нет; без токена или Bot API — без бота). Ответы в демо-диалоги уходят в «Не доставлено». Не для production |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
