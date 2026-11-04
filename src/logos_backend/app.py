@@ -1,8 +1,8 @@
 """FastAPI-приложение: готовность БД, аутентификация, приглашения и восстановление.
 
 Единое приложение подключает роутеры ``web_auth``, ``web_managers``,
-``web_recovery``, ``web_account``, ``web_channels`` и ``web_inbox``; отдельного приложения для
-продуктовых маршрутов нет. Lifespan запускает фоновый опрос Telegram.
+``web_recovery``, ``web_account``, ``web_channels``, ``web_inbox`` и ``web_tags``;
+отдельного приложения для продуктовых маршрутов нет. Lifespan запускает фоновый опрос Telegram.
 """
 
 
@@ -27,6 +27,7 @@ from logos_backend.web_channels import router as channels_router
 from logos_backend.web_inbox import router as inbox_router
 from logos_backend.web_managers import router as managers_router
 from logos_backend.web_recovery import router as recovery_router
+from logos_backend.web_tags import router as tags_router
 
 # Общий предохранитель запроса: превышение отклоняется до чтения и разбора
 # JSON. 16 КиБ с запасом вмещают максимальные поля входа (две строки по 1024
@@ -80,6 +81,7 @@ app.include_router(recovery_router)
 app.include_router(account_router)
 app.include_router(channels_router)
 app.include_router(inbox_router)
+app.include_router(tags_router)
 
 
 @app.exception_handler(RequestValidationError)

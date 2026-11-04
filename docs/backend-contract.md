@@ -201,12 +201,12 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 
 ## Входящие (#6)
 
-Только менеджер (`401` без сессии, `403` администратору); все `POST` требуют CSRF. Источник решений — ADR-0007.
+Только менеджер (`401` без сессии, `403` администратору); все `POST`/`PUT`/`DELETE` требуют CSRF. Источник решений — ADR-0007.
 
 | Эндпоинт | Тело | Успех | Ошибки |
 |---|---|---|---|
-| `GET /conversations` | — | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message"}],"unread_total","last_incoming_id"}`; свежие сверху | — |
-| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name"},"messages":[…]}`; вся переписка по порядку | `404` |
+| `GET /conversations` | — | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}]}],"unread_total","last_incoming_id","incoming_total"}`; свежие сверху | — |
+| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
 | `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
 | `POST /conversations/{id}/messages` | `{"text"}` (1–4096 после trim) | `200 {"message"}`, `status` = `delivered`/`failed` | `422 field=text`; `404` |
 | `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
@@ -219,6 +219,35 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - Фото — самый большой размер, имя `photo.jpg`; документ — исходное имя. Файл скачивается `getFile` (Bot API: до 20 МБ); больше или сбой — `available=false`, сообщение сохраняется.
 - Ответ сначала сохраняется (`sending`), затем уходит в Bot API: успешный ответ API → `delivered`, любая ошибка или таймаут → `failed` (ADR-0007). Повтор только вручную; повторная отправка может дать дубль у клиента.
 - `last_incoming_id` — id последнего входящего сообщения; фронтенд по его росту подаёт звук.
+- `incoming_total` — число всех входящих; разница со снимком списка = «N новых сообщений» (#7).
+
+## Сортировка и фильтры (#7)
+
+Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
+
+| Эндпоинт | Тело | Успех | Ошибки |
+|---|---|---|---|
+| `GET /conversations/preferences` | — | `200 {"sort":"newest"/"oldest"/"unread","saved_filters":[{"id","name","filters"}]}`; по умолчанию `newest` | — |
+| `PUT /conversations/preferences/sort` | `{"sort"}` | `200` — как `GET` | `422 field=sort` |
+| `POST /conversations/saved-filters` | `{"name"` (1–50 после trim)`,"filters":{"channel":["telegram"],"tag":[id],"status":["unread"/"read"]}}` | `200` — как `GET`; то же название перезаписывает набор | `422` |
+| `DELETE /conversations/saved-filters/{id}` | — | `200` — как `GET`; чужой/несуществующий id игнорируется | — |
+
+Значения внутри фильтра — ИЛИ, разные фильтры — И (ADR-0007).
+
+## Теги (#8)
+
+Имя 1–50 символов после trim, уникально без учёта регистра (`casefold`). Удаление тега снимает его со всех диалогов.
+
+| Эндпоинт | Кто | Тело | Успех | Ошибки |
+|---|---|---|---|---|
+| `GET /tags` | менеджер | — | `200 {"tags":[{"id","name","standard","own","author","conversation_count"}]}` | — |
+| `POST /conversations/{id}/tags` | менеджер | `{"name"}` | `200 {"tags":[{"id","name"}]}` — существующий тег без учёта регистра или новый тег менеджера | `422 field=name`; `404` |
+| `DELETE /conversations/{id}/tags/{tag_id}` | менеджер | — | `200 {"tags"}` — тег снят с диалога | `404` |
+| `DELETE /tags/{id}` | менеджер | — | `200` — только свой тег | `403` чужой/стандартный; `404` |
+| `GET /admin/tags` | администратор | — | `200 {"tags"}` | — |
+| `POST /admin/tags` | администратор | `{"name"}` | `200 {"tags"}` — стандартный тег | `409` имя занято; `422` |
+| `PATCH /admin/tags/{id}` | администратор | `{"name"}` | `200 {"tags"}` — любой тег | `409`; `422`; `404` |
+| `DELETE /admin/tags/{id}` | администратор | — | `200 {"tags"}` — любой тег | `404` |
 
 ## Схема данных
 
@@ -232,6 +261,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0004` | `email_changes` |
 | `0005` | `channels` |
 | `0006` | `conversations`, `messages` + индексы `ix_messages_conversation`, частичный уникальный `uq_messages_incoming` |
+| `0007` | `tags`, `conversation_tags`, `inbox_preferences`, `saved_filters` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -241,6 +271,8 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `channels`: одна строка (`id=1`), `status` ∈ `connected`/`error`/`disconnected`, код ошибки, токен **открытым текстом** (ADR-0007; `NULL` после отключения), `update_offset` для `getUpdates`, `connected_at` отличает переподключения от устаревших результатов опроса.
 - `conversations`: диалог = личный чат Telegram, уникальный `chat_id`, имя клиента, `last_message_at`.
 - `messages`: `direction` `in`/`out`, `kind`, текст/подпись, имя/размер файла, `file_path` — имя файла в `attachments/` рядом с SQLite (отдаётся только через API). У входящих `read_at` (общая прочитанность), у исходящих `status`. Частичный уникальный индекс `(conversation_id, telegram_message_id) WHERE direction='in'` отсекает дубли.
+- `tags`: уникальный `name_normalized`; `manager_id` NULL — стандартный тег, иначе автор. `conversation_tags` — связь с CASCADE на диалог и тег.
+- `inbox_preferences` (`manager_id`, `sort`) и `saved_filters` (`manager_id`, `name` уникально у менеджера, `filters` — JSON).
 - `login_attempts`: ключ `(scope, identifier)`, счётчик и время блокировки; `scope` ограничен `administrator`/`manager`.
 - `password_reset_requests`: ключ `email_normalized`, время последнего разрешённого запроса. Отдельная таблица, а не `login_attempts`, потому что семантика ограничения восстановления иная.
 
@@ -290,9 +322,9 @@ SMTP-пароль и токены не должны попадать в `VITE_*`
 ## Развёртывание и reverse proxy
 
 - Браузер и API должны быть на одном origin; CORS не настроен.
-- Reverse proxy маршрутизирует в бэкенд **до** SPA fallback как минимум `/health`, `/auth/*`, `/admin/*`, `/invitations/*`, `/password-reset/*`, `/account/*`, `/conversations*`, `/messages/*`, сохраняя статус и тело ответа. Остальные пути могут отдавать `index.html`.
+- Reverse proxy маршрутизирует в бэкенд **до** SPA fallback как минимум `/health`, `/auth/*`, `/admin/*`, `/invitations/*`, `/password-reset/*`, `/account/*`, `/conversations*`, `/messages/*`, `/tags*`, сохраняя статус и тело ответа. Остальные пути могут отдавать `index.html`.
 - При завершении TLS на прокси Uvicorn запускается с явными `--proxy-headers --forwarded-allow-ips <доверенный прокси>`, иначе `Secure` cookie не выставится.
-- Vite dev/preview проксирует `/health`, `/auth`, `/admin`, `/invitations`, `/password-reset/`, `/account`, `/conversations`, `/messages` (со слешем: SPA-страница `/password-reset` не проксируется). SPA-маршруты не начинаются с этих префиксов. Vite не является production-сервером.
+- Vite dev/preview проксирует `/health`, `/auth`, `/admin`, `/invitations`, `/password-reset/`, `/account`, `/conversations`, `/messages`, `/tags` (со слешем: SPA-страница `/password-reset` не проксируется). SPA-маршруты не начинаются с этих префиксов. Vite не является production-сервером.
 
 ## Что заведомо не реализовано
 

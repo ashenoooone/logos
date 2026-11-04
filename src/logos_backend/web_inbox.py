@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -19,12 +19,30 @@ from logos_backend.web_account import Manager
 from logos_backend.web_auth import require_csrf
 
 MAX_FILE_NAME_LENGTH = 255
+MAX_FILTER_NAME_LENGTH = 50
 
 router = APIRouter()
 
 
 class ReplyBody(BaseModel):
     text: str = Field(max_length=inbox.MAX_TEXT_LENGTH)
+
+
+class SortBody(BaseModel):
+    sort: Literal["newest", "oldest", "unread"]
+
+
+class Filters(BaseModel):
+    """Значения внутри фильтра — ИЛИ, разные фильтры — И (ADR-0007)."""
+
+    channel: list[Literal["telegram"]] = Field(default=[], max_length=10)
+    tag: list[int] = Field(default=[], max_length=100)
+    status: list[Literal["unread", "read"]] = Field(default=[], max_length=2)
+
+
+class SavedFilterBody(BaseModel):
+    name: str = Field(max_length=MAX_FILTER_NAME_LENGTH)
+    filters: Filters
 
 
 def _json(content: dict[str, object], status_code: int = 200) -> JSONResponse:
@@ -44,6 +62,34 @@ def _field_error(field: str, detail: str) -> JSONResponse:
 @router.get("/conversations")
 def list_conversations(subject: Manager) -> JSONResponse:
     return _json(inbox.list_conversations())
+
+
+@router.get("/conversations/preferences")
+def get_preferences(subject: Manager) -> JSONResponse:
+    return _json(inbox.get_preferences(subject.id))
+
+
+@router.put("/conversations/preferences/sort", dependencies=[Depends(require_csrf)])
+def set_sort(payload: SortBody, subject: Manager) -> JSONResponse:
+    inbox.set_sort(subject.id, payload.sort)
+    return _json(inbox.get_preferences(subject.id))
+
+
+@router.post("/conversations/saved-filters", dependencies=[Depends(require_csrf)])
+def save_filter(payload: SavedFilterBody, subject: Manager) -> JSONResponse:
+    name = payload.name.strip()
+    if not name:
+        return _field_error("name", "Name must not be blank")
+    inbox.save_filter(subject.id, name, payload.filters.model_dump())
+    return _json(inbox.get_preferences(subject.id))
+
+
+@router.delete(
+    "/conversations/saved-filters/{filter_id}", dependencies=[Depends(require_csrf)]
+)
+def delete_filter(filter_id: int, subject: Manager) -> JSONResponse:
+    inbox.delete_filter(subject.id, filter_id)
+    return _json(inbox.get_preferences(subject.id))
 
 
 @router.get("/conversations/{conversation_id}/messages")

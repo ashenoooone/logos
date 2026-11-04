@@ -20,6 +20,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    UniqueConstraint,
     create_engine,
     event,
     insert,
@@ -45,6 +46,10 @@ EMAIL_CHANGES_TABLE = "email_changes"
 CHANNELS_TABLE = "channels"
 CONVERSATIONS_TABLE = "conversations"
 MESSAGES_TABLE = "messages"
+TAGS_TABLE = "tags"
+CONVERSATION_TAGS_TABLE = "conversation_tags"
+INBOX_PREFERENCES_TABLE = "inbox_preferences"
+SAVED_FILTERS_TABLE = "saved_filters"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -58,6 +63,10 @@ REQUIRED_TABLES = frozenset(
         PASSWORD_RESET_REQUESTS_TABLE,
         EMAIL_CHANGES_TABLE,
         CHANNELS_TABLE,
+        TAGS_TABLE,
+        CONVERSATION_TAGS_TABLE,
+        INBOX_PREFERENCES_TABLE,
+        SAVED_FILTERS_TABLE,
     }
 )
 
@@ -228,6 +237,50 @@ messages = Table(
     Column("status", String, nullable=True),
     Column("created_at", Integer, nullable=False),
     Column("read_at", Integer, nullable=True),
+)
+
+# Тег (#8): имя уникально без учёта регистра; manager_id NULL — стандартный тег.
+tags = Table(
+    TAGS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("name_normalized", String, nullable=False, unique=True),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="CASCADE"), nullable=True),
+    Column("created_at", Integer, nullable=False),
+)
+
+conversation_tags = Table(
+    CONVERSATION_TAGS_TABLE,
+    metadata,
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# Сортировка «Входящих» и сохранённые наборы фильтров — свои у каждого менеджера (#7).
+inbox_preferences = Table(
+    INBOX_PREFERENCES_TABLE,
+    metadata,
+    Column(
+        "manager_id", Integer, ForeignKey("managers.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("sort", String, nullable=False),
+)
+
+saved_filters = Table(
+    SAVED_FILTERS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="CASCADE"), nullable=False),
+    Column("name", String, nullable=False),
+    Column("filters", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    UniqueConstraint("manager_id", "name", name="uq_saved_filters_name"),
 )
 
 Index(

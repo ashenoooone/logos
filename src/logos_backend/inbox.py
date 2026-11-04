@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -19,9 +20,16 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import Connection, RowMapping
 from sqlalchemy.exc import IntegrityError
 
-from logos_backend import channels, clock
+from logos_backend import channels, clock, tags
 from logos_backend.config import get_database_path
-from logos_backend.db import _create_engine, conversations, immediate_transaction, messages
+from logos_backend.db import (
+    _create_engine,
+    conversations,
+    immediate_transaction,
+    inbox_preferences,
+    messages,
+    saved_filters,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +44,8 @@ OUT = "out"
 SENDING = "sending"
 DELIVERED = "delivered"
 FAILED = "failed"
+
+SORTS = ("newest", "oldest", "unread")  # ADR-0007; по умолчанию newest
 
 
 class ConversationNotFoundError(Exception):
@@ -232,9 +242,10 @@ def list_conversations() -> dict[str, object]:
     try:
         with engine.connect() as connection:
             rows = connection.execute(statement).mappings().all()
-            last_incoming_id = connection.execute(
-                select(func.max(messages.c.id)).where(messages.c.direction == IN)
-            ).scalar()
+            last_incoming_id, incoming_total = connection.execute(
+                select(func.max(messages.c.id), func.count()).where(messages.c.direction == IN)
+            ).one()
+            tag_map = tags.conversation_tag_map(connection)
     finally:
         engine.dispose()
     items = [
@@ -245,6 +256,7 @@ def list_conversations() -> dict[str, object]:
             "last_message_at": _iso(int(row["last_message_at"])),
             "unread_count": int(row["unread_count"]),
             "last_message": _message_payload(row) if row["id"] is not None else None,
+            "tags": tag_map.get(int(row["conversation_id"]), []),
         }
         for row in rows
     ]
@@ -252,6 +264,8 @@ def list_conversations() -> dict[str, object]:
         "conversations": items,
         "unread_total": sum(int(row["unread_count"]) for row in rows),
         "last_incoming_id": last_incoming_id,
+        # Счётчик всех входящих: разница даёт «N новых сообщений» (#7).
+        "incoming_total": int(incoming_total),
     }
 
 
@@ -277,6 +291,7 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
                 .mappings()
                 .all()
             )
+            conversation_tags = tags.conversation_tag_map(connection).get(conversation_id, [])
     finally:
         engine.dispose()
     if conversation is None:
@@ -286,6 +301,7 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
             "id": conversation["id"],
             "provider": "telegram",
             "name": conversation["name"],
+            "tags": conversation_tags,
         },
         "messages": [_message_payload(row) for row in rows],
     }
@@ -451,3 +467,80 @@ def attachment(message_id: int) -> tuple[Path, str, str] | None:
     if row is None or row["file_path"] is None:
         return None
     return attachments_dir() / str(row["file_path"]), str(row["file_name"]), str(row["kind"])
+
+
+def get_preferences(manager_id: int) -> dict[str, object]:
+    """Сортировка и сохранённые наборы фильтров менеджера (#7)."""
+    engine = _create_engine()
+    try:
+        with engine.connect() as connection:
+            sort = connection.execute(
+                select(inbox_preferences.c.sort).where(
+                    inbox_preferences.c.manager_id == manager_id
+                )
+            ).scalar()
+            rows = connection.execute(
+                select(saved_filters.c.id, saved_filters.c.name, saved_filters.c.filters)
+                .where(saved_filters.c.manager_id == manager_id)
+                .order_by(saved_filters.c.id)
+            ).all()
+    finally:
+        engine.dispose()
+    return {
+        "sort": sort or SORTS[0],
+        "saved_filters": [
+            {"id": row_id, "name": name, "filters": json.loads(filters)}
+            for row_id, name, filters in rows
+        ],
+    }
+
+
+def set_sort(manager_id: int, sort: str) -> None:
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                insert(inbox_preferences)
+                .values(manager_id=manager_id, sort=sort)
+                .on_conflict_do_update(
+                    index_elements=[inbox_preferences.c.manager_id], set_={"sort": sort}
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def save_filter(manager_id: int, name: str, filters: dict[str, object]) -> None:
+    """Сохраняет набор фильтров; то же название перезаписывает набор."""
+    encoded = json.dumps(filters, ensure_ascii=False)
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                insert(saved_filters)
+                .values(
+                    manager_id=manager_id,
+                    name=name,
+                    filters=encoded,
+                    created_at=clock.now_seconds(),
+                )
+                .on_conflict_do_update(
+                    index_elements=[saved_filters.c.manager_id, saved_filters.c.name],
+                    set_={"filters": encoded},
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def delete_filter(manager_id: int, filter_id: int) -> None:
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                saved_filters.delete().where(
+                    saved_filters.c.id == filter_id, saved_filters.c.manager_id == manager_id
+                )
+            )
+    finally:
+        engine.dispose()
