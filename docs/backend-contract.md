@@ -169,6 +169,20 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 
 Успех атомарно: гасит ссылку, меняет Argon2id-хеш, удаляет **все** сессии менеджера, удаляет счётчик неудачных входов, создаёт новую браузерную сессию (cookie без `Max-Age`) и сразу авторизует ответ. Прежние устройства получают `401` на `/auth/me`; вход старым паролем больше не работает. Сессии администратора не затрагиваются. Срок ссылки — ровно 1 час: при `now == expires_at` она недействительна. При двух конкурентных завершениях успешно не более одного.
 
+## Профиль менеджера
+
+Все `POST /account/*` требуют CSRF. `name`, `email`, `password` — только сессия менеджера (`401` без сессии, `403` администратору). Ошибки полей — `422 {"detail","field"}`.
+
+| Эндпоинт | Тело | Успех | Ошибки |
+|---|---|---|---|
+| `POST /account/name` | `{"name"}` (≤200) | `200 {"subject"}` | `422 field=name` — пустое имя |
+| `POST /account/email` | `{"email"}` | `202 {"pending_email"}`; письмо на новый адрес | `422 field=email`: `Invalid email address`, `Email is unchanged`, `Email is already taken`; `502` — SMTP не принял письмо |
+| `POST /account/email/confirm` | `{"token"}`; без сессии | `200 {"manager_id","email"}` | `410` — ссылка использована, заменена или просрочена; `409` — адрес заняли до подтверждения |
+| `POST /account/password` | `{"current_password","new_password","new_password_confirmation","sign_out_other_devices":true}` | `200 {}` | `422 field=current_password` (не указан / неверен + `attempts_remaining`), `field=new_password_confirmation` (не совпал), `field=new_password` (политика 1.2); `423` — блокировка |
+
+- Смена email: ссылка `/email-confirmation#token=…`, одноразовая, 24 часа; новый запрос заменяет прежнюю. До подтверждения вход по старому email. Сессии не отзываются, старый адрес не уведомляется (ADR-0007).
+- Смена пароля: неверный текущий пароль считается неудачным входом по email менеджера (5 попыток → блокировка входа на 15 минут, как в #3). С `sign_out_other_devices` удаляются все сессии менеджера, кроме текущей. Счётчик неудач сбрасывается.
+
 ## Схема данных
 
 Миграции только явные: `uv run alembic upgrade head`. Приложение не создаёт и не обновляет схему при старте. Готовность `GET /health` требует все таблицы ниже.
@@ -178,11 +192,13 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0001` | `administrators` |
 | `0002` | `managers`, `login_attempts`, `sessions`, `one_time_links` + частичный уникальный индекс `uq_one_time_links_active` |
 | `0003` | `password_reset_requests` |
+| `0004` | `email_changes` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
 - `sessions`: уникальный `token_hash`, ровно один владелец (администратор или менеджер), `expires_at > created_at`.
 - `one_time_links`: уникальный `token_hash`, `purpose` (`invitation`/`password_reset`), `consumed_at`/`revoked_at`, `expires_at > created_at`. Частичный уникальный индекс не даёт иметь больше одной активной ссылки на менеджера и назначение.
+- `email_changes`: одна неподтверждённая смена на менеджера (уникальный `manager_id`), уникальный `token_hash`, новый адрес и его нормализованная форма; подтверждение удаляет строку.
 - `login_attempts`: ключ `(scope, identifier)`, счётчик и время блокировки; `scope` ограничен `administrator`/`manager`.
 - `password_reset_requests`: ключ `email_normalized`, время последнего разрешённого запроса. Отдельная таблица, а не `login_attempts`, потому что семантика ограничения восстановления иная.
 

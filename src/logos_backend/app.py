@@ -1,7 +1,7 @@
 """FastAPI-приложение: готовность БД, аутентификация, приглашения и восстановление.
 
-Единое приложение подключает роутеры ``web_auth``, ``web_managers`` и
-``web_recovery``; отдельного приложения для продуктовых маршрутов нет.
+Единое приложение подключает роутеры ``web_auth``, ``web_managers``,
+``web_recovery`` и ``web_account``; отдельного приложения для продуктовых маршрутов нет.
 """
 
 
@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from logos_backend.db import is_database_ready
+from logos_backend.web_account import router as account_router
 from logos_backend.web_auth import router as auth_router
 from logos_backend.web_managers import router as managers_router
 from logos_backend.web_recovery import router as recovery_router
@@ -34,6 +35,7 @@ app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_REQUEST_BODY_BY
 app.include_router(auth_router)
 app.include_router(managers_router)
 app.include_router(recovery_router)
+app.include_router(account_router)
 
 
 @app.exception_handler(RequestValidationError)

@@ -36,6 +36,11 @@ def password_reset_url(token: str) -> str:
     return f"{get_public_base_url().rstrip('/')}/password-reset#token={quote(token, safe='')}"
 
 
+def email_change_url(token: str) -> str:
+    """Ссылка подтверждения нового email; токен только во фрагменте."""
+    return f"{get_public_base_url().rstrip('/')}/email-confirmation#token={quote(token, safe='')}"
+
+
 def _settings() -> SmtpSettings:
     try:
         settings = get_smtp_settings()
@@ -151,6 +156,24 @@ def send_password_reset(recipient: str, token: str) -> None:
             f"{password_reset_url(token)}\n\n"
             "Ссылка действует 1 час и может быть использована один раз.\n"
             "Если вы не запрашивали восстановление, проигнорируйте это письмо.\n"
+        ),
+        sender,
+    )
+    _deliver(message)
+
+
+def send_email_change(recipient: str, token: str) -> None:
+    """Отправляет на новый адрес ссылку подтверждения; ошибка — ``MailDeliveryError``."""
+    sender = _settings().sender
+    message = _build_message(
+        recipient,
+        "Подтверждение email в Logos",
+        (
+            "Чтобы использовать этот адрес для входа в Logos, перейдите по ссылке:\n"
+            f"{email_change_url(token)}\n\n"
+            "Ссылка действует 24 часа и может быть использована один раз.\n"
+            "До подтверждения вход выполняется по прежнему адресу.\n"
+            "Если вы не меняли email, проигнорируйте это письмо.\n"
         ),
         sender,
     )

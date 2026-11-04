@@ -41,6 +41,7 @@ SESSIONS_TABLE = "sessions"
 ONE_TIME_LINKS_TABLE = "one_time_links"
 LOGIN_ATTEMPTS_TABLE = "login_attempts"
 PASSWORD_RESET_REQUESTS_TABLE = "password_reset_requests"
+EMAIL_CHANGES_TABLE = "email_changes"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -50,6 +51,7 @@ REQUIRED_TABLES = frozenset(
         ONE_TIME_LINKS_TABLE,
         LOGIN_ATTEMPTS_TABLE,
         PASSWORD_RESET_REQUESTS_TABLE,
+        EMAIL_CHANGES_TABLE,
     }
 )
 
@@ -146,6 +148,26 @@ password_reset_requests = Table(
     metadata,
     Column("email_normalized", String, primary_key=True),
     Column("requested_at", Integer, nullable=False),
+)
+
+# Одна неподтверждённая смена email на менеджера; подтверждение удаляет строку.
+email_changes = Table(
+    EMAIL_CHANGES_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "manager_id",
+        Integer,
+        ForeignKey("managers.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("token_hash", String, nullable=False, unique=True),
+    Column("new_email", String, nullable=False),
+    Column("new_email_normalized", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("expires_at", Integer, nullable=False),
+    CheckConstraint("expires_at > created_at", name="ck_email_changes_expiry"),
 )
 
 Index(
