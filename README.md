@@ -21,12 +21,13 @@
 - **Бэкенд:** Python 3.13, uv, FastAPI, Uvicorn; синхронный SQLAlchemy 2, Alembic; argon2-cffi (Argon2id).
 - **Проверки бэкенда:** pytest, Ruff, mypy.
 - **Клиент:** React + Mantine UI, TypeScript + Vite, pnpm, TanStack Router с маршрутами в коде; ESLint, Vitest + Testing Library.
+- **Структура фронтенда:** FEOD (базовый вариант), профиль `frontend/feod.profile.md`; границы слоёв и публичное API модулей проверяются в `pnpm lint`.
 - **База данных:** SQLite, файл, путь задаётся окружением.
 - **Границы:** одна установка для одной компании.
 - **Первая интеграция:** Telegram Bot API, бот по токену.
 - **Первый администратор:** закрытая команда развёртывания, без публичной регистрации.
 
-Источники и последствия: [ADR-0001](docs/adr/0001-project-baseline.md) (границы продукта), [ADR-0002](docs/adr/0002-backend-initialization.md) (инструменты бэкенда и первый администратор), [ADR-0003](docs/adr/0003-frontend-tooling.md) (pnpm и TanStack Router), [ADR-0004](docs/adr/0004-frontend-initialization.md) (сборка, проверки и подключение фронтенда). Реализованный HTTP-контракт — в [docs/backend-contract.md](docs/backend-contract.md).
+Источники и последствия: [ADR-0001](docs/adr/0001-project-baseline.md) (границы продукта), [ADR-0002](docs/adr/0002-backend-initialization.md) (инструменты бэкенда и первый администратор), [ADR-0003](docs/adr/0003-frontend-tooling.md) (pnpm и TanStack Router), [ADR-0004](docs/adr/0004-frontend-initialization.md) (сборка, проверки и подключение фронтенда), [ADR-0005](docs/adr/0005-frontend-feod.md) (FEOD-структура и проверка границ). Реализованный HTTP-контракт — в [docs/backend-contract.md](docs/backend-contract.md).
 
 ## Установка и запуск
 

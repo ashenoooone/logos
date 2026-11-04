@@ -5,9 +5,10 @@ import {
   type RouterHistory,
 } from '@tanstack/react-router'
 
-import { HomePage } from './routes/HomePage'
-import { NotFoundPage } from './routes/NotFoundPage'
-import { RootLayout } from './routes/RootLayout'
+import { HomePage } from '@/pages/home/HomePage'
+import { NotFoundPage } from '@/pages/not-found/NotFoundPage'
+
+import { RootLayout } from './layouts/RootLayout'
 
 const rootRoute = createRootRoute({
   component: RootLayout,

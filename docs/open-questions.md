@@ -1,12 +1,12 @@
 # Открытые вопросы перед реализацией
 
-На 2026-11-04. Это пробелы требований и технические решения, а не новые обязательные функции. Закрывать перед соответствующей задачей, не блокировать ими несвязанные работы. Принятые решения — в [ADR-0001](adr/0001-project-baseline.md), [ADR-0002](adr/0002-backend-initialization.md), [ADR-0003](adr/0003-frontend-tooling.md) и [ADR-0004](adr/0004-frontend-initialization.md).
+На 2026-11-04. Это пробелы требований и технические решения, а не новые обязательные функции. Закрывать перед соответствующей задачей, не блокировать ими несвязанные работы. Принятые решения — в [ADR-0001](adr/0001-project-baseline.md), [ADR-0002](adr/0002-backend-initialization.md), [ADR-0003](adr/0003-frontend-tooling.md), [ADR-0004](adr/0004-frontend-initialization.md) и [ADR-0005](adr/0005-frontend-feod.md).
 
 ## Техническая инициализация
 
 **Закрыто 2026-11-04 для бэкенда.** Инструменты, версии, менеджер пакетов, миграции, проверки и создание первого администратора зафиксированы в [ADR-0002](adr/0002-backend-initialization.md); реальные команды и поведение — в [README](../README.md) и [контракте бэкенда](backend-contract.md). Первый администратор создаётся интерактивной командой с двукратным скрытым вводом пароля; повтор не меняет существующую запись. Зафиксированы uv и Python 3.13, FastAPI, синхронный SQLAlchemy 2, Alembic, argon2-cffi, pytest, Ruff, mypy.
 
-**Инструменты фронтенда выбраны и реализованы 2026-11-04.** TypeScript + Vite, Node.js 24 LTS, pnpm, React + Mantine UI, TanStack Router с маршрутами в коде, ESLint, Vitest + Testing Library. Точные версии закреплены в `frontend/`; команды и dev/preview proxy `/health` — в [README](../README.md), решения — в [ADR-0004](adr/0004-frontend-initialization.md).
+**Инструменты фронтенда выбраны и реализованы 2026-11-04.** TypeScript + Vite, Node.js 24 LTS, pnpm, React + Mantine UI, TanStack Router с маршрутами в коде, ESLint, Vitest + Testing Library. Структура `frontend/src/` — FEOD (слои `app`, `pages`, `modules`, `common`, `globals`), границы проверяет `@o-feod/eslint-structure-plugin`. Точные версии закреплены в `frontend/`; команды и dev/preview proxy `/health` — в [README](../README.md), решения — в [ADR-0004](adr/0004-frontend-initialization.md) и [ADR-0005](adr/0005-frontend-feod.md).
 
 Осталось перед следующими этапами:
 

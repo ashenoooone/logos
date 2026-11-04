@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { checkHealth, type HealthCheckResult } from './health'
+import { checkHealth, type HealthCheckResult } from '../api/health'
 
 export type HealthState = { kind: 'loading' } | HealthCheckResult
 
