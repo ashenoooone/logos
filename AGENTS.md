@@ -22,7 +22,7 @@ Project docs stored locally:
 
 - Accepted choices recorded in `docs/adr/0001-project-baseline.md` through `docs/adr/0005-frontend-feod.md`.
 - Backend: Python 3.13 + uv, FastAPI + Uvicorn, sync SQLAlchemy 2 + Alembic, argon2-cffi; pytest, Ruff, mypy. Versions pinned in `uv.lock`.
-- Frontend in `frontend/`: React 19 + Mantine UI 9, TypeScript strict + Vite, pnpm 11.25.0, TanStack Router with code-based routes. Node.js 24.15.0 in `.nvmrc`, supported `>=24.15.0 <25`; activate it before running pnpm. Exact dependencies in `package.json` and `pnpm-lock.yaml`; no workspace. ESLint, Vitest + Testing Library.
+- Frontend in `frontend/`: React 19 + Mantine UI 9, TypeScript strict + Vite, pnpm 11.25.0, TanStack Router with code-based routes, TanStack Query for server state. Node.js 24.15.0 in `.nvmrc`, supported `>=24.15.0 <25`; activate it before running pnpm. Exact dependencies in `package.json` and `pnpm-lock.yaml`; no workspace. ESLint, Vitest + Testing Library.
 - Frontend follows FEOD (base): layers `app`, `pages`, `modules`, `common`, `globals`, alias `@` → `src`. Profile in `frontend/feod.profile.md`; machine-readable config in `frontend/package.json#feod`; structural rules enforced by `@o-feod/eslint-structure-plugin` in `pnpm lint`. No second `feod.config.json`.
 - Database: SQLite file. Path from `LOGOS_DATABASE_PATH`, default `data/logos.sqlite3` relative to the working directory. `.env` is not loaded automatically. Migrations only via explicit `uv run alembic upgrade head`.
 - One installation = one company. First integration: Telegram Bot API, not personal Telegram account.

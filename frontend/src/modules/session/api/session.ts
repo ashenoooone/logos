@@ -1,3 +1,5 @@
+import { queryOptions } from '@tanstack/react-query'
+
 import { apiGet, apiPost, type ApiErrorBody } from '@/common/api-client'
 
 export type Subject =
@@ -23,6 +25,14 @@ export async function fetchMe(signal?: AbortSignal): Promise<Subject | null> {
   }
   throw new Error(`GET /auth/me: HTTP ${response.status}`)
 }
+
+/** Кэш сессии: источник истины для `useSession`; обновляется через `setQueryData`. */
+export const meQueryOptions = queryOptions({
+  queryKey: ['session', 'me'],
+  queryFn: ({ signal }) => fetchMe(signal),
+  retry: false,
+  staleTime: Infinity,
+})
 
 export async function login(
   kind: LoginKind,

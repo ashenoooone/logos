@@ -1,38 +1,26 @@
 import { Alert, Button, Center, Loader, Stack } from '@mantine/core'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useMemo, type ReactNode } from 'react'
 
 import { failureMessage } from '@/common/api-client'
 
-import { fetchMe, type Subject } from '../api/session'
+import { meQueryOptions, type Subject } from '../api/session'
 import { SessionContext } from '../hooks/use-session'
-
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; subject: Subject | null }
 
 /** Загружает текущего субъекта через GET /auth/me и не рендерит приложение до ответа. */
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<State>({ status: 'loading' })
-  const [attempt, setAttempt] = useState(0)
+  const queryClient = useQueryClient()
+  const query = useQuery(meQueryOptions)
 
-  useEffect(() => {
-    const controller = new AbortController()
-    fetchMe(controller.signal)
-      .then((subject) => setState({ status: 'ready', subject }))
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setState({ status: 'error' })
-        }
-      })
-    return () => controller.abort()
-  }, [attempt])
-
-  const subject = state.status === 'ready' ? state.subject : null
   const setSubject = useCallback(
-    (next: Subject | null) => setState({ status: 'ready', subject: next }),
-    [],
+    (next: Subject | null) => queryClient.setQueryData(meQueryOptions.queryKey, next),
+    [queryClient],
   )
+
+  const subject = query.data ?? null
   const value = useMemo(() => ({ subject, setSubject }), [subject, setSubject])
 
-  if (state.status === 'loading') {
+  if (query.isPending || (query.isError && query.isFetching)) {
     return (
       <Center mih="100vh">
         <Loader aria-label="Загрузка" />
@@ -40,20 +28,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  if (state.status === 'error') {
+  if (query.isError) {
     return (
       <Center mih="100vh" px="md">
         <Stack maw={420}>
           <Alert color="red" title="Не удалось проверить сессию">
             {failureMessage()}
           </Alert>
-          <Button
-            variant="default"
-            onClick={() => {
-              setState({ status: 'loading' })
-              setAttempt((value) => value + 1)
-            }}
-          >
+          <Button variant="default" onClick={() => void query.refetch()}>
             Повторить
           </Button>
         </Stack>

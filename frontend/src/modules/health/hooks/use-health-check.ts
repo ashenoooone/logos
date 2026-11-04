@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 
-import { checkHealth, type HealthCheckResult } from '../api/health'
+import { healthQueryOptions, type HealthCheckResult } from '../api/health'
 
 export type HealthState = { kind: 'loading' } | HealthCheckResult
 
@@ -10,35 +10,14 @@ export interface HealthCheckState {
 }
 
 export function useHealthCheck(): HealthCheckState {
-  const [state, setState] = useState<HealthState>({ kind: 'loading' })
-  const [attempt, setAttempt] = useState(0)
+  const query = useQuery(healthQueryOptions)
 
-  const retry = useCallback(() => {
-    setState({ kind: 'loading' })
-    setAttempt((value) => value + 1)
-  }, [])
+  const state: HealthState =
+    query.isPending || query.isFetching
+      ? { kind: 'loading' }
+      : query.isError
+        ? { kind: 'network-error' }
+        : (query.data ?? { kind: 'network-error' })
 
-  useEffect(() => {
-    const controller = new AbortController()
-    let active = true
-
-    checkHealth(controller.signal)
-      .then((result) => {
-        if (active) {
-          setState(result)
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setState({ kind: 'network-error' })
-        }
-      })
-
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [attempt])
-
-  return { state, retry }
+  return { state, retry: () => void query.refetch() }
 }

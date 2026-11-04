@@ -1,3 +1,5 @@
+import { queryOptions } from '@tanstack/react-query'
+
 import { apiPost, type ApiErrorBody } from '@/common/api-client'
 import type { Subject } from '@/modules/session'
 
@@ -52,6 +54,14 @@ export async function previewLink(
   }
   return { kind: 'failed', status: response.status }
 }
+
+export const previewLinkQueryOptions = (flow: LinkFlow, token: string) =>
+  queryOptions({
+    queryKey: ['password-link', flow, token],
+    queryFn: ({ signal }) => previewLink(flow, token, signal),
+    retry: false,
+    staleTime: Infinity,
+  })
 
 export async function submitPassword(
   flow: LinkFlow,

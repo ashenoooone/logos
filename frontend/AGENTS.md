@@ -93,6 +93,9 @@ src/modules/health/
 - Profile: [`feod.profile.md`](feod.profile.md) and `package.json#feod`. Do not create
   `feod.config.json`.
 - Routing is manual TanStack Router code in `src/app/router.tsx`.
+- Server state goes through TanStack Query: `queryOptions` live next to the API
+  functions in `modules/<module>/api/`, the single `QueryClient` is created in
+  `src/app/config/query-client.ts`.
 - Mantine theme lives in `src/app/config/theme.ts`; shared test setup in
   `src/app/test/`.
 - Layers are `app`, `pages`, `modules`, `common`, `globals` (folder `globals` maps to

@@ -1,3 +1,5 @@
+import { queryOptions } from '@tanstack/react-query'
+
 import { apiGet, apiPost, type ApiErrorBody } from '@/common/api-client'
 
 export interface Manager {
@@ -37,6 +39,12 @@ export async function listManagers(signal?: AbortSignal): Promise<ListResult> {
   }
   return { kind: 'failed', status: response.status }
 }
+
+export const managersQueryOptions = queryOptions({
+  queryKey: ['managers'],
+  queryFn: ({ signal }) => listManagers(signal),
+  retry: false,
+})
 
 export async function createManager(name: string, email: string): Promise<InvitationResult> {
   const response = await apiPost<InvitationBody>('/admin/managers', { name, email })

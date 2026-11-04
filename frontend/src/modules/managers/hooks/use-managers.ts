@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
 
 import { useSession } from '@/modules/session'
 
-import { listManagers, type Manager } from '../api/managers'
+import { managersQueryOptions, type Manager } from '../api/managers'
 
 export type ManagersState =
   | { kind: 'loading' }
@@ -11,30 +12,26 @@ export type ManagersState =
 
 export function useManagers() {
   const { setSubject } = useSession()
-  const [state, setState] = useState<ManagersState>({ kind: 'loading' })
-  const [attempt, setAttempt] = useState(0)
-
-  const reload = useCallback(() => setAttempt((value) => value + 1), [])
+  const query = useQuery(managersQueryOptions)
 
   useEffect(() => {
-    const controller = new AbortController()
-    listManagers(controller.signal)
-      .then((result) => {
-        if (result.kind === 'success') {
-          setState({ kind: 'ready', managers: result.managers })
-        } else if (result.kind === 'unauthorized') {
-          setSubject(null) // сессия истекла или отозвана — guard уведёт на вход
-        } else {
-          setState({ kind: 'error', status: result.status })
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setState({ kind: 'error' })
-        }
-      })
-    return () => controller.abort()
-  }, [attempt, setSubject])
+    if (query.data?.kind === 'unauthorized') {
+      setSubject(null) // сессия истекла или отозвана — guard уведёт на вход
+    }
+  }, [query.data, setSubject])
 
-  return { state, reload }
+  let state: ManagersState
+  if (query.isError) {
+    state = { kind: 'error' }
+  } else if (!query.data) {
+    state = { kind: 'loading' }
+  } else if (query.data.kind === 'success') {
+    state = { kind: 'ready', managers: query.data.managers }
+  } else if (query.data.kind === 'unauthorized') {
+    state = { kind: 'loading' }
+  } else {
+    state = { kind: 'error', status: query.data.status }
+  }
+
+  return { state, reload: () => void query.refetch() }
 }

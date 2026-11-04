@@ -10,14 +10,15 @@ import {
   Text,
   TextInput,
 } from '@mantine/core'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 
 import { failureMessage } from '@/common/api-client'
 import { CenteredCard } from '@/common/centered-card'
 import { useSession } from '@/modules/session'
 
-import { previewLink, submitPassword, type LinkFlow } from '../api/password'
+import { previewLinkQueryOptions, submitPassword, type LinkFlow } from '../api/password'
 import { passwordRules } from '../api/password-policy'
 import { useLinkToken } from '../hooks/use-link-token'
 
@@ -43,30 +44,26 @@ const TEXT: Record<LinkFlow, { title: string; expired: string }> = {
 /** Экран по одноразовой ссылке: проверка ссылки, ввод пароля, вход после сохранения. */
 export function PasswordSetupFlow({ flow }: { flow: LinkFlow }) {
   const token = useLinkToken()
-  const [state, setState] = useState<State>(token ? { kind: 'loading' } : { kind: 'expired' })
+  const [expired, setExpired] = useState(false)
+  const query = useQuery({
+    ...previewLinkQueryOptions(flow, token ?? ''),
+    enabled: token !== null,
+  })
 
-  useEffect(() => {
-    if (!token) {
-      return
-    }
-    const controller = new AbortController()
-    previewLink(flow, token, controller.signal)
-      .then((result) => {
-        if (result.kind === 'valid') {
-          setState({ kind: 'form', email: result.email, name: result.name })
-        } else if (result.kind === 'expired') {
-          setState({ kind: 'expired' })
-        } else {
-          setState({ kind: 'error', status: result.status })
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setState({ kind: 'error' })
-        }
-      })
-    return () => controller.abort()
-  }, [flow, token])
+  let state: State
+  if (!token || expired) {
+    state = { kind: 'expired' }
+  } else if (query.isPending || query.isFetching) {
+    state = { kind: 'loading' }
+  } else if (query.isError || !query.data) {
+    state = { kind: 'error' }
+  } else if (query.data.kind === 'valid') {
+    state = { kind: 'form', email: query.data.email, name: query.data.name }
+  } else if (query.data.kind === 'expired') {
+    state = { kind: 'expired' }
+  } else {
+    state = { kind: 'error', status: query.data.status }
+  }
 
   switch (state.kind) {
     case 'loading':
@@ -107,7 +104,7 @@ export function PasswordSetupFlow({ flow }: { flow: LinkFlow }) {
             flow={flow}
             token={token ?? ''}
             email={state.email}
-            onExpired={() => setState({ kind: 'expired' })}
+            onExpired={() => setExpired(true)}
           />
         </CenteredCard>
       )

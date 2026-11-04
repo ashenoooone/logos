@@ -1,3 +1,5 @@
+import { queryOptions } from '@tanstack/react-query'
+
 export const HEALTH_ENDPOINT = '/health'
 
 export type HealthCheckResult =
@@ -50,6 +52,12 @@ export async function checkHealth(signal: AbortSignal): Promise<HealthCheckResul
 
   return { kind: 'invalid-response', status: response.status }
 }
+
+export const healthQueryOptions = queryOptions({
+  queryKey: ['health'],
+  queryFn: ({ signal }) => checkHealth(signal),
+  retry: false,
+})
 
 async function isDatabaseNotReadyResponse(
   response: Response,
