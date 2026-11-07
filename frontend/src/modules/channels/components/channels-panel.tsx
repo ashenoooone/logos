@@ -1,3 +1,4 @@
+import { TELEGRAM_LABEL } from '@/common/channel-label'
 import {
   Alert,
   Anchor,
@@ -170,7 +171,7 @@ function ChannelCard({
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
           <Title order={2} fz="lg">
-            Telegram
+            {TELEGRAM_LABEL}
           </Title>
           {channel.status === 'connected' && (
             <Badge color="green" variant="light">
@@ -272,7 +273,7 @@ function ConnectForm({
       <form onSubmit={handleSubmit} noValidate>
         <Stack gap="md">
           <Title order={2} fz="lg">
-            Подключить Telegram
+            Подключить {TELEGRAM_LABEL}
           </Title>
           <List type="ordered" size="sm" c="dimmed">
             <List.Item>Создайте бота у @BotFather</List.Item>
@@ -291,7 +292,7 @@ function ConnectForm({
           />
           <TextInput
             label="Как назвать в Logos"
-            placeholder="Telegram"
+            placeholder={TELEGRAM_LABEL}
             maxLength={200}
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}

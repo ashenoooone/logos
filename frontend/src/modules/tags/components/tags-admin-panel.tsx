@@ -11,6 +11,7 @@ import {
   createStandardTag,
   deleteTag,
   renameTag,
+  tagsQueryOptions,
   type Tag,
 } from '../api/tags'
 import { TagBadge } from './tag-badge'
@@ -48,6 +49,8 @@ export function TagsAdminPanel() {
         setError(failureMessage(response.status))
       } else {
         queryClient.setQueryData(adminTagsQueryOptions.queryKey, response)
+        void queryClient.invalidateQueries({ queryKey: tagsQueryOptions.queryKey })
+        void queryClient.invalidateQueries({ queryKey: ['conversations'] })
         saved = true
       }
     } catch {

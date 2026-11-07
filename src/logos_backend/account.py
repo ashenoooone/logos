@@ -2,15 +2,14 @@
 
 Новый email начинает работать только после перехода по одноразовой ссылке,
 которая действует 24 часа (ADR-0007). До подтверждения вход — по старому
-адресу. Неверный текущий пароль учитывается в тех же счётчиках, что и вход:
-украденная сессия не даёт перебирать пароль без ограничений.
+Неверный текущий пароль всё ещё требует подтверждения владельца профиля.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from logos_backend import auth, clock, security
@@ -18,7 +17,7 @@ from logos_backend.db import (
     _create_engine,
     email_changes,
     immediate_transaction,
-    login_attempts,
+    manager_otp_codes,
     managers,
     sessions,
 )
@@ -45,6 +44,9 @@ class EmailChangeInvalidError(Exception):
 
 class CurrentPasswordRequiredError(Exception):
     """Текущий пароль не указан."""
+
+class CurrentPasswordInvalidError(Exception):
+    """Текущий пароль профиля неверен или изменился конкурентно."""
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,11 @@ def confirm_email_change(token: str, now: int | None = None) -> ConfirmedEmail:
                         email_normalized=str(row["new_email_normalized"]),
                     )
                 )
+                connection.execute(
+                    delete(manager_otp_codes).where(
+                        manager_otp_codes.c.manager_id == int(row["manager_id"])
+                    )
+                )
         except IntegrityError as exc:
             # Адрес заняли между запросом и подтверждением; ссылка остаётся непогашенной.
             raise EmailTakenError("email is taken") from exc
@@ -172,61 +179,43 @@ def change_password(
     new_password: str,
     confirmation: str,
     sign_out_other_devices: bool,
-    now: int | None = None,
 ) -> None:
-    """Меняет пароль по верному текущему; текущая сессия всегда сохраняется.
-
-    Неверный текущий пароль — ``auth.InvalidCredentialsError`` или
-    ``auth.AccountLockedError``, как при входе по тому же email.
-    """
+    """Меняет пароль по верному текущему; текущая сессия всегда сохраняется."""
     if not current_password:
         raise CurrentPasswordRequiredError("current password is required")
     security.validate_password_confirmation(new_password, confirmation)
-    timestamp = _now(now)
 
     engine = _create_engine()
     try:
         with engine.connect() as connection:
             row = (
                 connection.execute(
-                    select(managers.c.email_normalized, managers.c.password_hash).where(
-                        managers.c.id == manager_id
-                    )
+                    select(managers.c.password_hash).where(managers.c.id == manager_id)
                 )
                 .mappings()
                 .one()
             )
-        identifier = str(row["email_normalized"])
         verified_hash = str(row["password_hash"])
-        auth._ensure_not_locked(auth.MANAGER_SCOPE, identifier, timestamp)
         if not security.verify_password(verified_hash, current_password):
-            auth._record_failure(auth.MANAGER_SCOPE, identifier, timestamp)
+            raise CurrentPasswordInvalidError("current password is incorrect")
 
         password_hash = hash_password(new_password)
         with immediate_transaction(engine) as connection:
             updated = connection.execute(
                 update(managers)
-                .where(and_(managers.c.id == manager_id, managers.c.password_hash == verified_hash))
+                .where(managers.c.id == manager_id, managers.c.password_hash == verified_hash)
                 .values(password_hash=password_hash)
                 .returning(managers.c.id)
             ).first()
-            if updated is not None:
+            if updated is not None and sign_out_other_devices:
                 connection.execute(
-                    delete(login_attempts).where(
-                        login_attempts.c.scope == auth.MANAGER_SCOPE,
-                        login_attempts.c.identifier == identifier,
+                    delete(sessions).where(
+                        sessions.c.manager_id == manager_id,
+                        sessions.c.token_hash != token_digest(session_token),
                     )
                 )
-                if sign_out_other_devices:
-                    connection.execute(
-                        delete(sessions).where(
-                            sessions.c.manager_id == manager_id,
-                            sessions.c.token_hash != token_digest(session_token),
-                        )
-                    )
     finally:
         engine.dispose()
 
     if updated is None:
-        # Пароль изменили параллельно: проверенный текущий уже не действует.
-        auth._record_failure(auth.MANAGER_SCOPE, identifier, timestamp)
+        raise CurrentPasswordInvalidError("current password changed concurrently")

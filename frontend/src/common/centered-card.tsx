@@ -2,7 +2,7 @@ import { Container, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import type { ReactNode } from 'react'
 
 /**
- * Экран входа, приглашения и восстановления: крупный заголовок слева, форма на
+ * Экран входа и приглашения: крупный заголовок слева, форма на
  * серой плашке справа; на телефоне — друг под другом.
  */
 export function CenteredCard({

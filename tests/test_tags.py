@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, insert
-from test_password_reset import (
+from support import (
     BASE_URL,
     add_active_manager,
     add_administrator,
@@ -48,17 +48,37 @@ def test_tags_case_permissions_and_delete(database: None) -> None:
     response = first.post(
         "/conversations/1/tags", json={"name": " Возврат "}, headers=csrf_headers(first)
     )
+    assert response.status_code == 200
     [tag] = response.json()["tags"]
     assert tag["name"] == "Возврат"
-    # Другой регистр — тот же тег, второй не создаётся.
+    # Создание с тем же именем в другом регистре конфликтует, не создавая тег.
     response = second.post(
-        "/conversations/1/tags", json={"name": "возврат"}, headers=csrf_headers(second)
+        "/conversations/1/tags", json={"name": "ВОЗВРАТ"}, headers=csrf_headers(second)
     )
+    assert response.status_code == 409
+    # Тег менеджера не виден другому менеджеру; собственный ID прикрепляется.
+    response = second.post(
+        "/conversations/1/tags", json={"tag_id": tag["id"]}, headers=csrf_headers(second)
+    )
+    assert response.status_code == 403
+    response = first.post(
+        "/conversations/1/tags", json={"tag_id": tag["id"]}, headers=csrf_headers(first)
+    )
+    assert response.status_code == 200
     assert response.json()["tags"] == [tag]
     assert len(second.get("/tags").json()["tags"]) == 1
     assert second.get("/conversations").json()["conversations"][0]["tags"] == [tag]
+    assert second.post(
+        "/conversations/1/tags", json={"tag_id": 999}, headers=csrf_headers(second)
+    ).status_code == 404
+    assert second.post(
+        "/conversations/1/tags", json={"name": "ВОЗВРАТ"}, headers=csrf_headers(second)
+    ).status_code == 409
+    assert second.post(
+        "/conversations/1/tags", json={"tag_id": tag["id"], "name": "other"},
+        headers=csrf_headers(second),
+    ).status_code == 422
 
-    # Чужой тег менеджер не удаляет.
     assert second.delete(f"/tags/{tag['id']}", headers=csrf_headers(second)).status_code == 403
 
     admin = TestClient(app, base_url=BASE_URL)
@@ -70,9 +90,14 @@ def test_tags_case_permissions_and_delete(database: None) -> None:
     )
     standard = admin.post("/admin/tags", json={"name": "Доставка"}, headers=csrf_headers(admin))
     standard_id = next(t["id"] for t in standard.json()["tags"] if t["standard"])
+    assert second.post(
+        "/conversations/1/tags", json={"tag_id": standard_id}, headers=csrf_headers(second)
+    ).status_code == 200
     assert first.delete(f"/tags/{standard_id}", headers=csrf_headers(first)).status_code == 403
     assert first.get("/admin/tags").status_code == 403
 
-    # Свой тег автор удаляет — он снимается с диалога.
+    # Свой тег автор удаляет — снимается только он, стандартный остаётся.
     assert first.delete(f"/tags/{tag['id']}", headers=csrf_headers(first)).status_code == 200
-    assert first.get("/conversations/1/messages").json()["conversation"]["tags"] == []
+    assert first.get("/conversations/1/messages").json()["conversation"]["tags"] == [
+        {"id": standard_id, "name": "Доставка"}
+    ]

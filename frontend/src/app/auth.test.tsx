@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -42,62 +42,59 @@ describe('доступ по сессии', () => {
 })
 
 describe('вход менеджера', () => {
-  async function submitLogin() {
-    const user = userEvent.setup()
+  async function requestCode(user = userEvent.setup()) {
     await user.type(await screen.findByLabelText(/Email/), 'anna@example.com')
-    await user.type(screen.getByLabelText(/Пароль/), 'wrong-password1')
-    await user.click(screen.getByRole('button', { name: 'Войти' }))
+    await user.click(screen.getByRole('button', { name: 'Получить код' }))
     return user
   }
 
-  it('показывает общую ошибку и оставшиеся попытки из ответа', async () => {
+  it('даёт нейтральный ответ и 60-секундную паузу при запросе кода', async () => {
     mockBackend({
-      'POST /auth/manager/login': () =>
-        jsonResponse({ detail: 'Invalid credentials', attempts_remaining: 3 }, 401),
+      'POST /auth/manager/otp/request': () => jsonResponse({ detail: 'If the account exists...' }, 202),
     })
     renderApp('/login')
-    await submitLogin()
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Неверный email или пароль. Осталось попыток: 3.',
-    )
+    await requestCode()
+    expect(await screen.findByText(/Если учётная запись существует/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Отправить код ещё раз через/ })).toBeDisabled()
   })
 
-  it('показывает блокировку, время повтора и восстановление пароля', async () => {
+  it('показывает интервал из retry_after_seconds при ограничении запросов', async () => {
     mockBackend({
-      'POST /auth/manager/login': () =>
-        jsonResponse(
-          { detail: 'Too many login attempts', attempts_remaining: 0, retry_after_seconds: 900 },
-          423,
-        ),
+      'POST /auth/manager/otp/request': () =>
+        jsonResponse({ detail: 'Too many', retry_after_seconds: 42 }, 429),
     })
     renderApp('/login')
-    await submitLogin()
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Вход заблокирован')
-    expect(alert).toHaveTextContent('через 15 мин')
-    expect(within(alert).getByRole('link', { name: 'Восстановить пароль' })).toBeInTheDocument()
+    await requestCode()
+    expect(await screen.findByRole('alert')).toHaveTextContent('через 42 с')
+    expect(screen.getByRole('button', { name: 'Получить код' })).toBeDisabled()
   })
 
-  it('после входа показывает в шапке, кто вошёл, и выходит по «Выйти»', async () => {
+  it('сохраняет remember, показывает ошибку кода и завершает сессию штатно', async () => {
+    let attempts = 0
     const calls = mockBackend({
-      'POST /auth/manager/login': () => jsonResponse({ subject: MANAGER_SUBJECT }),
+      'POST /auth/manager/otp/request': () => jsonResponse({}, 202),
+      'POST /auth/manager/otp/verify': () =>
+        ++attempts === 1
+          ? jsonResponse({ detail: 'Invalid or expired code' }, 401)
+          : jsonResponse({ subject: MANAGER_SUBJECT }),
       'POST /auth/logout': () => new Response(null, { status: 204 }),
     })
     renderApp('/login')
-    const user = await submitLogin()
+    const user = await requestCode()
+    await user.type(screen.getByRole('textbox', { name: /Код из письма/ }), '123456')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить код' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Неверный или просроченный код')
 
+    await user.click(screen.getByLabelText('Запомнить меня'))
+    await user.click(screen.getByRole('button', { name: 'Подтвердить код' }))
     expect(await screen.findByText('anna@example.com')).toBeInTheDocument()
-    const login = calls.find((call) => call.key === 'POST /auth/manager/login')
-    expect(login?.body).toEqual({
-      email: 'anna@example.com',
-      password: 'wrong-password1',
-      remember: false,
-    })
-    expect(login?.headers.get('X-CSRF-Token')).toBe(CSRF_TOKEN)
-
+    const verify = calls.filter((call) => call.key === 'POST /auth/manager/otp/verify').at(-1)
+    expect(verify?.body).toEqual({ email: 'anna@example.com', code: '123456', remember: true })
+    expect(verify?.headers.get('X-CSRF-Token')).toBe(CSRF_TOKEN)
     await user.click(screen.getByRole('button', { name: 'Выйти' }))
     expect(await screen.findByRole('heading', { name: 'Вход в Logos' })).toBeInTheDocument()
   })
+
 })
 
 describe('приглашение', () => {
@@ -146,36 +143,6 @@ describe('приглашение', () => {
   })
 })
 
-describe('восстановление пароля', () => {
-  it('показывает одинаковый ответ, подсказку про «Спам» и блокирует повтор на 60 с', async () => {
-    mockBackend({
-      'POST /password-reset/request': () =>
-        jsonResponse({ detail: 'If the account exists...' }, 202),
-    })
-    renderApp('/forgot-password')
-    const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/Email/), 'anna@example.com')
-    await user.click(screen.getByRole('button', { name: 'Отправить ссылку' }))
-
-    expect(await screen.findByText(/Проверьте папку «Спам»/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Отправить ещё раз через (60|59) с/ })).toBeDisabled()
-  })
-
-  it('берёт оставшееся время повтора из ответа 429', async () => {
-    mockBackend({
-      'POST /password-reset/request': () =>
-        jsonResponse({ detail: 'Too many', retry_after_seconds: 42 }, 429),
-    })
-    renderApp('/forgot-password')
-    const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/Email/), 'anna@example.com')
-    await user.click(screen.getByRole('button', { name: 'Отправить ссылку' }))
-
-    expect(
-      await screen.findByRole('button', { name: /Отправить ещё раз через (42|41) с/ }),
-    ).toBeDisabled()
-  })
-})
 
 describe('сотрудники', () => {
   it('показывает «Этот email уже есть в системе» у поля и не закрывает форму', async () => {

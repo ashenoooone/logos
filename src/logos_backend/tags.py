@@ -96,8 +96,38 @@ def _tags_of(connection: Connection, conversation_id: int) -> list[dict[str, obj
     return conversation_tag_map(connection).get(conversation_id, [])
 
 
-def attach(conversation_id: int, name: str, manager_id: int) -> list[dict[str, object]]:
-    """Ставит тег на диалог: существующий без учёта регистра или новый от менеджера."""
+def attach_by_id(
+    conversation_id: int, tag_id: int, manager_id: int
+) -> list[dict[str, object]]:
+    """Ставит видимый менеджеру существующий тег на диалог."""
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            exists = connection.execute(
+                select(conversations.c.id).where(conversations.c.id == conversation_id)
+            ).first()
+            if exists is None:
+                raise ConversationNotFoundError
+            tag = connection.execute(
+                select(tags.c.manager_id).where(tags.c.id == tag_id)
+            ).first()
+            if tag is None:
+                raise TagNotFoundError
+            if tag[0] is not None and tag[0] != manager_id:
+                raise TagForbiddenError
+            connection.execute(
+                insert(conversation_tags)
+                .values(conversation_id=conversation_id, tag_id=tag_id)
+                .on_conflict_do_nothing()
+            )
+            return _tags_of(connection, conversation_id)
+    finally:
+        engine.dispose()
+
+def attach_by_name(
+    conversation_id: int, name: str, manager_id: int
+) -> list[dict[str, object]]:
+    """Создаёт тег менеджера и ставит его на диалог; имя не выбирает существующий тег."""
     clean, normalized = _clean(name)
     engine = _create_engine()
     try:
@@ -107,16 +137,17 @@ def attach(conversation_id: int, name: str, manager_id: int) -> list[dict[str, o
             ).first()
             if exists is None:
                 raise ConversationNotFoundError
-            connection.execute(
-                insert(tags)
-                .values(
-                    name=clean,
-                    name_normalized=normalized,
-                    manager_id=manager_id,
-                    created_at=clock.now_seconds(),
+            try:
+                connection.execute(
+                    insert(tags).values(
+                        name=clean,
+                        name_normalized=normalized,
+                        manager_id=manager_id,
+                        created_at=clock.now_seconds(),
+                    )
                 )
-                .on_conflict_do_nothing(index_elements=[tags.c.name_normalized])
-            )
+            except IntegrityError as exc:
+                raise TagExistsError from exc
             tag_id = connection.execute(
                 select(tags.c.id).where(tags.c.name_normalized == normalized)
             ).scalar_one()

@@ -4,7 +4,7 @@ import type { Subject } from '../api/session'
 
 export interface SessionContextValue {
   subject: Subject | null
-  /** Вызывать после входа, принятия приглашения, восстановления и выхода. */
+  /** Вызывать после входа, принятия приглашения и выхода. */
   setSubject: (subject: Subject | null) => void
 }
 

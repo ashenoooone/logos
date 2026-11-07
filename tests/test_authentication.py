@@ -15,13 +15,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, insert, inspect, select
 from sqlalchemy.exc import IntegrityError
 
-from logos_backend import auth, clock, security
+from logos_backend import auth, clock, mail, security
 from logos_backend.app import MAX_REQUEST_BODY_BYTES, app
 from logos_backend.db import (
     administrators,
     create_first_admin,
     database_url,
     login_attempts,
+    manager_otp_requests,
     managers,
     sessions,
 )
@@ -110,16 +111,34 @@ def administrator_login(
 def manager_login(
     client: TestClient,
     email: str,
-    password: str,
+    code: str,
     *,
     remember: bool = False,
     origin: str = "http://testserver",
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Any:
     token = bootstrap_csrf(client)
+    engine = create_engine(database_url())
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                manager_otp_requests.delete().where(
+                    manager_otp_requests.c.email_normalized == security.normalize_email(email)
+                )
+            )
+    finally:
+        engine.dispose()
+    captured: list[str] = []
+    monkeypatch.setattr(mail, "send_manager_otp", lambda recipient, code: captured.append(code))
+    monkeypatch.setattr(mail, "check_delivery_available", lambda: None)
+    headers = csrf_headers(token, origin)
+    requested = client.post("/auth/manager/otp/request", json={"email": email}, headers=headers)
+    if requested.status_code != 202:
+        return requested
     return client.post(
-        "/auth/manager/login",
-        json={"email": email, "password": password, "remember": remember},
-        headers=csrf_headers(token, origin),
+        "/auth/manager/otp/verify",
+        json={"email": email, "code": captured[-1], "remember": remember},
+        headers=headers,
     )
 
 
@@ -302,15 +321,6 @@ def test_normalized_email_is_unique_including_concurrent_creation(database: Path
     assert manager_count() == 2
 
 
-def test_pending_manager_cannot_login(client: TestClient, database: Path) -> None:
-    add_manager("pending@example.com", password=None)
-
-    response = manager_login(client, "pending@example.com", "anything1")
-
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid credentials", "attempts_remaining": 4}
-    assert client.cookies.get(SESSION_COOKIE_NAME) is None
-
 
 def test_administrator_login_uses_exact_cli_login_and_accepts_existing_password(
     client: TestClient, database: Path
@@ -331,60 +341,6 @@ def test_administrator_login_uses_exact_cli_login_and_accepts_existing_password(
     assert "email" not in me.json()["subject"]
     assert "name" not in me.json()["subject"]
 
-
-def test_manager_login_normalizes_email_and_rejects_wrong_password(
-    client: TestClient, database: Path
-) -> None:
-    manager = add_manager("User@Example.com", "correct1")
-
-    wrong = manager_login(client, "user@example.com", "wrongpass1")
-    assert wrong.status_code == 401
-    assert wrong.json() == {"detail": "Invalid credentials", "attempts_remaining": 4}
-
-    response = manager_login(client, " user@example.COM ", "correct1")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "subject": {
-            "type": "manager",
-            "id": manager.id,
-            "name": manager.name,
-            "email": "User@Example.com",
-        }
-    }
-    me = client.get("/auth/me")
-    assert me.json()["subject"]["email"] == "User@Example.com"
-
-
-def test_unknown_and_known_identifiers_share_visible_counters(
-    client: TestClient, database: Path, fake_clock: FakeClock
-) -> None:
-    add_manager("known@example.com", "correct1")
-
-    unknown_manager = TestClient(app, base_url="http://testserver")
-    known_manager = TestClient(app, base_url="http://testserver")
-    for index in range(4):
-        unknown_response = manager_login(unknown_manager, "missing@example.com", "wrongpass1")
-        known_response = manager_login(known_manager, "known@example.com", "wrongpass1")
-        assert unknown_response.status_code == known_response.status_code == 401
-        assert unknown_response.json() == known_response.json()
-        assert unknown_response.json()["attempts_remaining"] == 4 - index
-
-    unknown_locked = manager_login(unknown_manager, "missing@example.com", "wrongpass1")
-    known_locked = manager_login(known_manager, "known@example.com", "wrongpass1")
-    assert unknown_locked.status_code == known_locked.status_code == 423
-    assert unknown_locked.json() == known_locked.json()
-    assert unknown_locked.json()["retry_after_seconds"] == auth.LOCK_SECONDS
-
-    add_administrator("root", "correct1")
-    unknown_admin = TestClient(app, base_url="http://testserver")
-    known_admin = TestClient(app, base_url="http://testserver")
-    for index in range(4):
-        unknown_response = administrator_login(unknown_admin, "nobody", "wrongpass1")
-        known_response = administrator_login(known_admin, "root", "wrongpass1")
-        assert unknown_response.status_code == known_response.status_code == 401
-        assert unknown_response.json() == known_response.json()
-        assert unknown_response.json()["attempts_remaining"] == 4 - index
 
 
 def test_login_lock_boundary_is_fifteen_minutes(
@@ -411,52 +367,6 @@ def test_login_lock_boundary_is_fifteen_minutes(
     assert unlocked.status_code == 200
 
 
-def test_failed_attempts_restart_after_lock_expiry(
-    client: TestClient, database: Path, fake_clock: FakeClock
-) -> None:
-    add_manager("locked@example.com", "correct1")
-    for _ in range(5):
-        manager_login(client, "locked@example.com", "wrongpass1")
-
-    fake_clock.advance(auth.LOCK_SECONDS)
-
-    response = manager_login(client, "locked@example.com", "wrongpass1")
-
-    assert response.status_code == 401
-    assert response.json()["attempts_remaining"] == 4
-
-
-def test_successful_login_resets_failed_attempts(
-    client: TestClient, database: Path
-) -> None:
-    add_administrator("root", "correct1")
-    add_manager("reset@example.com", "correct1")
-
-    for expected_remaining in (4, 3, 2, 1):
-        response = administrator_login(client, "root", "wrongpass1")
-        assert response.status_code == 401
-        assert response.json()["attempts_remaining"] == expected_remaining
-
-    assert administrator_login(client, "root", "correct1").status_code == 200
-
-    after_success = administrator_login(client, "root", "wrongpass1")
-    assert after_success.status_code == 401
-    assert after_success.json() == {
-        "detail": "Invalid credentials",
-        "attempts_remaining": 4,
-    }
-
-    for _ in range(4):
-        assert manager_login(client, "reset@example.com", "wrongpass1").status_code == 401
-    assert manager_login(client, "reset@example.com", "correct1").status_code == 200
-
-    manager_after_success = manager_login(client, "reset@example.com", "wrongpass1")
-    assert manager_after_success.status_code == 401
-    assert manager_after_success.json() == {
-        "detail": "Invalid credentials",
-        "attempts_remaining": 4,
-    }
-
 
 def test_malformed_stored_hash_fails_generically_and_counts_attempt(
     client: TestClient, database: Path
@@ -477,32 +387,30 @@ def test_oversized_request_body_is_rejected_before_parsing_and_writes(
     client: TestClient, database: Path
 ) -> None:
     add_manager("known@example.com", "correct1")
-    oversized_suffix = b'"' + b"a" * MAX_REQUEST_BODY_BYTES + b'"}'
 
     known = client.post(
-        "/auth/manager/login",
-        content=b'{"email":"known@example.com","password":' + oversized_suffix,
+        "/auth/manager/otp/verify",
+        content=b'{"email":"known@example.com","code":"' + b"a" * MAX_REQUEST_BODY_BYTES + b'"}',
         headers={"Content-Type": "application/json"},
     )
     unknown = client.post(
-        "/auth/manager/login",
-        content=b'{"email":"missing@example.com","password":' + oversized_suffix,
+        "/auth/manager/otp/verify",
+        content=b'{"email":"missing@example.com","code":"' + b"a" * MAX_REQUEST_BODY_BYTES + b'"}',
         headers={"Content-Type": "application/json"},
     )
 
     assert known.status_code == unknown.status_code == 413
     assert known.content == unknown.content
 
-    chunks = (
-        chunk
-        for chunk in (
-            b'{"email":"missing@example.com","password":"',
+    chunks = iter(
+        (
+            b'{"email":"known@example.com","code":"',
             b"a" * MAX_REQUEST_BODY_BYTES,
             b'"}',
         )
     )
     streamed = client.post(
-        "/auth/manager/login",
+        "/auth/manager/otp/verify",
         content=chunks,
         headers={"Content-Type": "application/json"},
     )
@@ -512,9 +420,8 @@ def test_oversized_request_body_is_rejected_before_parsing_and_writes(
     assert manager_count() == 1
     assert session_token_hashes() == []
 
-
 def test_oversized_credentials_are_rejected_before_authentication(
-    client: TestClient, database: Path
+    client: TestClient, database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     add_administrator("root", "correct1")
     overlong_password = "a" * (MAX_PASSWORD_LENGTH + 1)
@@ -530,7 +437,10 @@ def test_oversized_credentials_are_rejected_before_authentication(
 
     overlong_email = "a" * (MAX_EMAIL_LENGTH + 1 - len("@example.com")) + "@example.com"
     assert len(overlong_email) == MAX_EMAIL_LENGTH + 1
-    assert manager_login(client, overlong_email, "correct1").status_code == 422
+    assert (
+        manager_login(client, overlong_email, "correct1", monkeypatch=monkeypatch).status_code
+        == 422
+    )
 
     assert login_attempt_count() == 0
     assert session_token_hashes() == []
@@ -617,15 +527,16 @@ def test_logout_revokes_current_session_and_stores_only_digest(
 
 
 def test_successful_login_rotates_session_token(
-    client: TestClient, database: Path, fake_clock: FakeClock
+    client: TestClient, database: Path, fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch
 ) -> None:
     add_manager("rotate@example.com", "correct1")
 
-    manager_login(client, "rotate@example.com", "correct1")
+    manager_login(client, "rotate@example.com", "correct1", monkeypatch=monkeypatch)
     first_token = client.cookies.get(SESSION_COOKIE_NAME)
     assert first_token is not None
 
-    manager_login(client, "rotate@example.com", "correct1")
+    manager_login(client, "rotate@example.com", "correct1", monkeypatch=monkeypatch)
     second_token = client.cookies.get(SESSION_COOKIE_NAME)
     assert second_token is not None
 
@@ -701,7 +612,7 @@ def build_admin_only_app() -> FastAPI:
 
 
 def test_administrator_authorization_dependency(
-    client: TestClient, database: Path
+    client: TestClient, database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     add_administrator("root", "correct1")
     add_manager("manager@example.com", "correct1")
@@ -716,7 +627,7 @@ def test_administrator_authorization_dependency(
     assert admin_only.get("/admin-only").status_code == 200
 
     manager_client = TestClient(app, base_url="http://testserver")
-    manager_login(manager_client, "manager@example.com", "correct1")
+    manager_login(manager_client, "manager@example.com", "correct1", monkeypatch=monkeypatch)
     manager_token = manager_client.cookies.get(SESSION_COOKIE_NAME)
     assert manager_token is not None
     manager_only = TestClient(build_admin_only_app(), base_url="http://testserver")

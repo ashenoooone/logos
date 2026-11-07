@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_password_reset import BASE_URL, add_administrator, csrf_headers, migrate
+from support import BASE_URL, add_administrator, csrf_headers, migrate
 
 from logos_backend import channels
 from logos_backend.app import app

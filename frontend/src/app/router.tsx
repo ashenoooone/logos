@@ -9,25 +9,22 @@ import { AdminLoginPage } from '@/pages/admin-login/admin-login-page'
 import { ChannelsPage } from '@/pages/channels/channels-page'
 import { EmployeesPage } from '@/pages/employees/employees-page'
 import { EmailConfirmationPage } from '@/pages/email-confirmation/email-confirmation-page'
-import { ForgotPasswordPage } from '@/pages/forgot-password/forgot-password-page'
-import { HomePage } from '@/pages/home/home-page'
 import { InboxPage } from '@/pages/inbox/inbox-page'
 import { InvitationPage } from '@/pages/invitation/invitation-page'
 import { LoginPage } from '@/pages/login/login-page'
-import { NotFoundPage } from '@/pages/not-found/not-found-page'
-import { PasswordResetPage } from '@/pages/password-reset/password-reset-page'
 import { ProfilePage } from '@/pages/profile/profile-page'
+import { HomePage } from '@/pages/home/home-page'
+import { NotFoundPage } from '@/pages/not-found/not-found-page'
 import { TagCatalogPage } from '@/pages/tag-catalog/tag-catalog-page'
-
 import { AdministratorLayout } from './layouts/administrator-layout'
 import { AnonymousLayout } from './layouts/anonymous-layout'
 import { AuthenticatedLayout } from './layouts/authenticated-layout'
 import { ManagerLayout } from './layouts/manager-layout'
 import { RootLayout } from './layouts/root-layout'
+ 
 
 // SPA-пути не должны начинаться с API-префиксов из vite.config.ts
-// (/health, /auth, /admin, /invitations, /password-reset/, /account, /conversations, /messages,
-// /tags).
+// (/health, /auth, /admin, /invitations, /account, /conversations, /messages, /tags).
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -91,19 +88,8 @@ const routeTree = rootRoute.addChildren([
       createRoute({ getParentRoute: () => managerRoute, path: '/profile', component: ProfilePage }),
     ]),
   ]),
-  // Восстановление доступно и из профиля («Забыли пароль?»), поэтому без guard анонима.
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/forgot-password',
-    component: ForgotPasswordPage,
-  }),
   // Ссылки из писем открываются в любом состоянии сессии: успех создаёт новую сессию.
   createRoute({ getParentRoute: () => rootRoute, path: '/invitation', component: InvitationPage }),
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/password-reset',
-    component: PasswordResetPage,
-  }),
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/email-confirmation',

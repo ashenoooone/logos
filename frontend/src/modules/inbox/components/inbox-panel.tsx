@@ -1,3 +1,4 @@
+import { TELEGRAM_LABEL } from '@/common/channel-label'
 import {
   ActionIcon,
   Alert,
@@ -16,6 +17,7 @@ import {
   ScrollArea,
   Stack,
   Text,
+  TextInput,
   Textarea,
   UnstyledButton,
 } from '@mantine/core'
@@ -120,12 +122,13 @@ function preview(message: Message | null) {
 export function InboxPanel() {
   const { setSubject } = useSession()
   const queryClient = useQueryClient()
-  const list = useQuery(conversationsQueryOptions)
+  const [search, setSearch] = useState('')
+  const list = useQuery(conversationsQueryOptions(search))
   const preferences = useQuery(preferencesQueryOptions)
   const allTags = useQuery(tagsQueryOptions)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  const [snapshot, setSnapshot] = useState<{ ids: number[]; incoming: number } | null>(null)
+  const [snapshot, setSnapshot] = useState<{ ids: number[]; incoming: number; query: string } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   const data = list.data
@@ -139,28 +142,40 @@ export function InboxPanel() {
   const value = data?.kind === 'success' ? data.value : null
   const prefs = preferences.data?.kind === 'success' ? preferences.data.value : null
   const sort = prefs?.sort ?? 'newest'
-  const ids = snapshot?.ids ?? (value ? arrange(value.conversations, sort, filters) : [])
-  const fresh = value && snapshot ? value.incoming_total - snapshot.incoming : 0
+  const currentSnapshot = snapshot?.query === search ? snapshot : null
+  const fresh = value && currentSnapshot ? Math.max(0, value.incoming_total - currentSnapshot.incoming) : 0
+  const listPending = list.isPending || list.isFetching
+  const listFailed = data?.kind === 'failed'
 
-  // Снимок берётся, когда списка ещё нет (открытие, смена сортировки/фильтров, «Показать»).
+  // Query changes get a new snapshot; existing order remains frozen within that query.
   useEffect(() => {
-    if (value && !preferences.isPending && snapshot === null) {
-      setSnapshot({ ids: arrange(value.conversations, sort, filters), incoming: value.incoming_total })
+    if (value && !preferences.isPending && currentSnapshot === null) {
+      setSnapshot({ ids: arrange(value.conversations, sort, filters), incoming: value.incoming_total, query: search })
     }
-  }, [value, preferences.isPending, snapshot, sort, filters])
+  }, [value, preferences.isPending, currentSnapshot, sort, filters, search])
 
-  const selected = value?.conversations.find((item) => item.id === selectedId) ?? null
-  const selectedUnread = selected?.unread_count ?? 0
-
-  // Открытый диалог прочитан, в том числе когда в нём появились новые сообщения.
+  const thread = useQuery({
+    ...threadQueryOptions(selectedId ?? 0),
+    enabled: selectedId !== null,
+  })
+  const readMessageId = thread.data?.kind === 'success'
+    ? [...thread.data.value.messages].reverse().find((message) => message.direction === 'in')?.id ?? null
+    : null
+  const markedRead = useRef<number | null>(null)
+  const markingRead = useRef<number | null>(null)
   useEffect(() => {
-    if (selectedId === null || selectedUnread === 0) {
-      return
-    }
+    if (selectedId === null || readMessageId === null || markedRead.current === readMessageId || markingRead.current === readMessageId) return
+    markingRead.current = readMessageId
     void markRead(selectedId)
-      .then(() => queryClient.invalidateQueries({ queryKey: conversationsQueryOptions.queryKey }))
-      .catch(() => undefined)
-  }, [selectedId, selectedUnread, queryClient])
+      .then(() => {
+        markedRead.current = readMessageId
+        return queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (markingRead.current === readMessageId) markingRead.current = null
+      })
+  }, [selectedId, readMessageId, queryClient])
 
   function applyFilters(next: Filters) {
     setFilters(next)
@@ -200,30 +215,30 @@ export function InboxPanel() {
     }
   }
 
-  if (list.isPending || preferences.isPending || unauthorized) {
-    return <Loader aria-label="Загрузка диалогов" />
-  }
-  if (!value) {
-    return (
-      <Alert color="red" title="Не удалось загрузить диалоги">
-        <Stack gap="xs" align="flex-start">
-          <span>{data?.kind === 'failed' ? failureMessage(data.status) : failureMessage()}</span>
-          <Button size="xs" variant="default" onClick={() => void list.refetch()}>
-            Повторить
-          </Button>
-        </Stack>
-      </Alert>
-    )
-  }
-
-  const byId = new Map(value.conversations.map((item) => [item.id, item]))
+  const byId = new Map((value?.conversations ?? []).map((item) => [item.id, item]))
+  const ids = currentSnapshot?.ids ?? (value ? arrange(value.conversations, sort, filters) : [])
   const rows = ids.flatMap((id) => byId.get(id) ?? [])
   const tags = allTags.data?.status === 200 ? (allTags.data.data.tags ?? []) : []
   const active = (Object.keys(FILTER_LABELS) as (keyof Filters)[]).filter((key) => filters[key].length > 0)
 
+  if (preferences.isPending || unauthorized) {
+    return <Loader aria-label="Загрузка диалогов" />
+  }
+  
+
   return (
     <Flex direction={{ base: 'column', md: 'row' }} gap="xl" align={{ base: 'stretch', md: 'flex-start' }}>
       <Box w={{ md: 260 }} style={{ flexShrink: 0 }}>
+        <TextInput
+          aria-label="Поиск по сообщениям"
+          placeholder="Поиск по переписке"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          rightSection={search ? <CloseButton aria-label="Очистить поиск" onClick={() => setSearch('')} /> : null}
+          rightSectionPointerEvents={search ? 'auto' : 'none'}
+          mb="sm"
+        />
+        {listPending && <Loader size="xs" aria-label="Поиск диалогов" />}
         <InboxToolbar
           sort={sort}
           onSort={changeSort}
@@ -233,7 +248,6 @@ export function InboxPanel() {
           saved={prefs?.saved_filters ?? []}
           found={rows.length}
           onApplySaved={(saved) =>
-            // Удалённые с тех пор теги из набора выпадают.
             applyFilters({ ...NO_FILTERS, ...saved, tag: saved.tag.filter((id) => tags.some((tag) => tag.id === id)) })
           }
           onSaveCurrent={hasFilters(filters) ? saveCurrent : null}
@@ -253,44 +267,46 @@ export function InboxPanel() {
             style={{ flexDirection: 'column', borderRight: '1px solid var(--mantine-color-gray-3)' }}
           >
             <Group gap="sm" px="md" py="sm" bg="gray.0" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
-              <Text fw={600} size="sm">
-                Все каналы
-              </Text>
-              <Text size="sm" c="dimmed">
-                непрочитанных {value.unread_total}
-              </Text>
+              <Text fw={600} size="sm">Все каналы</Text>
+              {value && <Text size="sm" c="dimmed">непрочитанных {value.unread_total}</Text>}
             </Group>
             {fresh > 0 && (
-              <UnstyledButton
-                onClick={() => setSnapshot(null)}
-                py={6}
-                ta="center"
-                c="blue"
-                fz="sm"
-                style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
-              >
+              <UnstyledButton onClick={() => setSnapshot(null)} py={6} ta="center" c="blue" fz="sm">
                 Показать {newMessages(fresh)}
               </UnstyledButton>
             )}
             <ScrollArea style={{ flex: 1 }}>
-              {value.conversations.length === 0 && (
+              {listFailed || list.isError ? (
+                <Alert color="red" role="alert" m="md" title="Не удалось загрузить диалоги">
+                  <Group justify="space-between" align="center">
+                    <Text size="sm">{listFailed ? failureMessage(data.status) : failureMessage()}</Text>
+                    <Button size="xs" variant="light" onClick={() => void list.refetch()}>Повторить</Button>
+                  </Group>
+                </Alert>
+              ) : null}
+              {value && !listPending && value.conversations.length === 0 && !search && (
                 <Text size="sm" c="dimmed" p="md">
                   Пока нет диалогов. Сообщения клиентов из подключённых мессенджеров появятся здесь.
                 </Text>
               )}
-              {value.conversations.length > 0 && rows.length === 0 && active.length > 0 && (
+              {value && !listPending && rows.length === 0 && (active.length > 0 || search) && (
                 <Stack gap="xs" p="md" align="flex-start">
-                  <Text size="sm">По этим фильтрам ничего не найдено.</Text>
-                  <Group gap="xs">
-                    {active.map((key) => (
-                      <Button key={key} size="compact-xs" variant="default" onClick={() => applyFilters({ ...filters, [key]: [] })}>
-                        Сбросить «{FILTER_LABELS[key]}»
-                      </Button>
-                    ))}
-                  </Group>
-                  <Button size="xs" onClick={() => applyFilters(NO_FILTERS)}>
-                    Сбросить все фильтры
-                  </Button>
+                  <Text size="sm">{search ? 'По запросу ничего не найдено.' : 'По этим фильтрам ничего не найдено.'}</Text>
+                  {active.length > 0 && (
+                    <Group gap="xs">
+                      {active.map((key) => (
+                        <Button key={key} size="compact-xs" variant="default" onClick={() => applyFilters({ ...filters, [key]: [] })}>
+                          Сбросить «{FILTER_LABELS[key]}»
+                        </Button>
+                      ))}
+                    </Group>
+                  )}
+                  {active.length > 0 && (
+                    <Button size="xs" onClick={() => applyFilters(NO_FILTERS)}>
+                      Сбросить все фильтры
+                    </Button>
+                  )}
+                  {search && <Button size="xs" variant="default" onClick={() => setSearch('')}>Очистить поиск</Button>}
                 </Stack>
               )}
               {rows.map((item) => (
@@ -321,6 +337,7 @@ export function InboxPanel() {
     </Flex>
   )
 }
+
 
 function ConversationRow({
   item,
@@ -356,7 +373,7 @@ function ConversationRow({
                 {item.name}
               </Text>
               <Badge size="xs" variant="outline" color="gray">
-                TG
+                {TELEGRAM_LABEL}
               </Badge>
             </Group>
             <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
@@ -408,7 +425,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
   }, [count])
 
   function refresh() {
-    void queryClient.invalidateQueries({ queryKey: conversationsQueryOptions.queryKey })
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] })
   }
 
   /** Обрабатывает ответ отправки; `true` — сообщение сохранено на сервере. */
@@ -477,7 +494,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
           {thread.conversation.name}
         </Text>
         <Badge variant="outline" color="gray" size="sm">
-          Telegram
+          {TELEGRAM_LABEL}
         </Badge>
       </Group>
       <ConversationTags conversationId={id} tags={thread.conversation.tags} />
@@ -525,7 +542,10 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
         borderRadius: out ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
       }}
     >
-      <Stack gap={6}>
+      <Stack gap={4}>
+        <Text size="xs" c="dimmed">
+          {message.author ?? (out ? 'Менеджер' : 'Клиент')}
+        </Text>
         {message.kind === 'unsupported' && (
           <Text size="sm" fs="italic" c="dimmed">
             Неподдерживаемое сообщение
@@ -634,7 +654,7 @@ function Composer({ onSend }: { onSend: (text: string, file: File | null) => Pro
         <Group gap="sm" wrap="nowrap" align="flex-end">
           <Textarea
             aria-label="Ответ"
-            placeholder="Ответ… (уйдёт в Telegram)"
+            placeholder={`Ответ… (уйдёт в ${TELEGRAM_LABEL})`}
             autosize
             minRows={1}
             maxRows={6}

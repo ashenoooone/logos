@@ -20,6 +20,7 @@ export interface InboxFile {
 export interface Message {
   id: number
   direction: 'in' | 'out'
+  author: string | null
   kind: 'text' | 'photo' | 'document' | 'unsupported'
   text: string | null
   file: InboxFile | null
@@ -68,15 +69,19 @@ function toResult<T>(status: number, value: T | null | undefined): Result<T> {
   return { kind: 'failed', status }
 }
 
-export const conversationsQueryOptions = queryOptions({
-  queryKey: ['conversations'],
-  queryFn: async ({ signal }) => {
-    const response = await apiGet<ConversationList>('/conversations', signal)
-    return toResult(response.status, response.data)
-  },
-  refetchInterval: POLL_MS,
-  retry: false,
-})
+export function conversationsQueryOptions(query = '') {
+  const normalized = query.trim()
+  return queryOptions({
+    queryKey: ['conversations', 'list', normalized],
+    queryFn: async ({ signal }) => {
+      const search = normalized ? `?q=${encodeURIComponent(normalized)}` : ''
+      const response = await apiGet<ConversationList>(`/conversations${search}`, signal)
+      return toResult(response.status, response.data)
+    },
+    refetchInterval: POLL_MS,
+    retry: false,
+  })
+}
 
 export function threadQueryOptions(id: number) {
   return queryOptions({

@@ -1,6 +1,5 @@
 import {
   Alert,
-  Anchor,
   Box,
   Button,
   Checkbox,
@@ -11,7 +10,6 @@ import {
   TextInput,
   Title,
 } from '@mantine/core'
-import { Link } from '@tanstack/react-router'
 import { useState, type FormEvent, type ReactNode } from 'react'
 
 import { failureMessage } from '@/common/api-client'
@@ -231,9 +229,6 @@ function PasswordForm({ email }: { email: string }) {
             error={errors.current_password}
             onChange={(event) => setCurrent(event.currentTarget.value)}
           />
-          <Anchor component={Link} to="/forgot-password" size="sm" w="fit-content">
-            Забыли пароль?
-          </Anchor>
           <PasswordInput
             label="Новый пароль"
             autoComplete="new-password"

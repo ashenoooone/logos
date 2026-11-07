@@ -34,7 +34,7 @@ function beep() {
  */
 export function InboxNavLink() {
   const { setSubject } = useSession()
-  const { data } = useQuery(conversationsQueryOptions)
+  const { data } = useQuery(conversationsQueryOptions())
   const list = data?.kind === 'success' ? data.value : null
   const total = list?.unread_total ?? 0
   const lastIncoming = list?.last_incoming_id

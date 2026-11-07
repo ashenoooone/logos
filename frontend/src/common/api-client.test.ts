@@ -22,13 +22,13 @@ describe('apiPost', () => {
       .mockImplementationOnce(async () => json({ ok: true }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const response = await apiPost('/auth/manager/login', { email: 'a@b.c' })
+    const response = await apiPost('/auth/manager/otp/request', { email: 'a@b.c' })
 
     expect(response).toEqual({ status: 200, data: { ok: true } })
     expect(fetchMock.mock.calls[0][0]).toBe('/auth/csrf')
     expect(fetchMock.mock.calls[0][1].method).toBe('GET')
     const [path, init] = fetchMock.mock.calls[1]
-    expect(path).toBe('/auth/manager/login')
+    expect(path).toBe('/auth/manager/otp/request')
     expect(init.method).toBe('POST')
     expect(init.headers['X-CSRF-Token']).toBe('fresh')
     expect(init.credentials).toBe('same-origin')

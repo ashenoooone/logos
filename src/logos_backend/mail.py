@@ -31,11 +31,6 @@ def invitation_url(token: str) -> str:
     return f"{get_public_base_url().rstrip('/')}/invitation#token={quote(token, safe='')}"
 
 
-def password_reset_url(token: str) -> str:
-    """Ссылка на фронтенд-страницу восстановления; токен только во фрагменте."""
-    return f"{get_public_base_url().rstrip('/')}/password-reset#token={quote(token, safe='')}"
-
-
 def email_change_url(token: str) -> str:
     """Ссылка подтверждения нового email; токен только во фрагменте."""
     return f"{get_public_base_url().rstrip('/')}/email-confirmation#token={quote(token, safe='')}"
@@ -144,22 +139,17 @@ def send_invitation(recipient: str, name: str, token: str) -> None:
     )
     _deliver(message)
 
-
-def send_password_reset(recipient: str, token: str) -> None:
-    """Отправляет письмо восстановления; любая ошибка — ``MailDeliveryError``."""
-    sender = _settings().sender
+def send_manager_otp(recipient: str, code: str) -> None:
+    """Отправляет код входа; код не выводится в диагностические журналы."""
     message = _build_message(
         recipient,
-        "Восстановление пароля в Logos",
-        (
-            "Чтобы восстановить пароль в Logos, перейдите по ссылке:\n"
-            f"{password_reset_url(token)}\n\n"
-            "Ссылка действует 1 час и может быть использована один раз.\n"
-            "Если вы не запрашивали восстановление, проигнорируйте это письмо.\n"
-        ),
-        sender,
+        "Код входа в Logos",
+        f"Ваш код входа: {code}\n\nКод действует 10 минут и может быть использован один раз.\n",
+        _settings().sender,
     )
     _deliver(message)
+
+
 
 
 def send_email_change(recipient: str, token: str) -> None:

@@ -60,9 +60,8 @@ def _field_error(field: str, detail: str) -> JSONResponse:
 
 
 @router.get("/conversations")
-def list_conversations(subject: Manager) -> JSONResponse:
-    return _json(inbox.list_conversations())
-
+def list_conversations(subject: Manager, q: str = "") -> JSONResponse:
+    return _json(inbox.list_conversations(q))
 
 @router.get("/conversations/preferences")
 def get_preferences(subject: Manager) -> JSONResponse:
@@ -115,7 +114,7 @@ def reply(conversation_id: int, payload: ReplyBody, subject: Manager) -> JSONRes
     if not text:
         return _field_error("text", "Text must not be blank")
     try:
-        return _json({"message": inbox.reply(conversation_id, text)})
+        return _json({"message": inbox.reply(conversation_id, text, subject.id)})
     except inbox.ConversationNotFoundError:
         return _not_found()
 
@@ -134,7 +133,11 @@ async def reply_with_file(
         return _field_error("file", "File must not be empty")
     try:
         message = await run_in_threadpool(
-            inbox.reply, conversation_id, text.strip(), (name.strip() or "file", content)
+            inbox.reply,
+            conversation_id,
+            text.strip(),
+            subject.id,
+            (name.strip() or "file", content),
         )
     except inbox.ConversationNotFoundError:
         return _not_found()

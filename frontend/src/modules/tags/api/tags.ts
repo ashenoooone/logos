@@ -21,6 +21,7 @@ type ConversationTagList = { tags?: TagRef[] }
 export const tagsQueryOptions = queryOptions({
   queryKey: ['tags'],
   queryFn: async ({ signal }) => apiGet<TagList>('/tags', signal),
+  refetchInterval: 4_000,
   retry: false,
 })
 
@@ -30,8 +31,13 @@ export const adminTagsQueryOptions = queryOptions({
   retry: false,
 })
 
-/** Ставит тег по имени: существующий без учёта регистра или новый. */
-export function attachTag(conversationId: number, name: string): Promise<ApiResponse<ConversationTagList>> {
+/** Attaches an existing visible tag by stable ID. */
+export function attachTagById(conversationId: number, tagId: number): Promise<ApiResponse<ConversationTagList>> {
+  return apiPost(`/conversations/${conversationId}/tags`, { tag_id: tagId })
+}
+
+/** Explicitly creates a manager tag by name and attaches it. */
+export function createAndAttachTag(conversationId: number, name: string): Promise<ApiResponse<ConversationTagList>> {
   return apiPost(`/conversations/${conversationId}/tags`, { name })
 }
 

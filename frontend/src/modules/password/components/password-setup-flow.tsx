@@ -13,7 +13,6 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
-
 import { failureMessage } from '@/common/api-client'
 import { CenteredCard } from '@/common/centered-card'
 import { useSession } from '@/modules/session'
@@ -28,16 +27,11 @@ type State =
   | { kind: 'expired' }
   | { kind: 'error'; status?: number }
 
-const TEXT: Record<LinkFlow, { title: string; expired: string }> = {
+const TEXT = {
   invitation: {
     title: 'Задайте пароль',
     expired:
       'Ссылка уже использована или срок её действия истёк. Попросите администратора отправить новое приглашение.',
-  },
-  reset: {
-    title: 'Новый пароль',
-    expired:
-      'Ссылка уже использована или срок её действия истёк. Запросите восстановление пароля ещё раз.',
   },
 }
 
@@ -75,15 +69,9 @@ export function PasswordSetupFlow({ flow }: { flow: LinkFlow }) {
     case 'expired':
       return (
         <CenteredCard title="Ссылка устарела" description={TEXT[flow].expired}>
-          {flow === 'reset' ? (
-            <Anchor component={Link} to="/forgot-password">
-              Запросить новую ссылку
-            </Anchor>
-          ) : (
-            <Anchor component={Link} to="/login">
-              Перейти ко входу
-            </Anchor>
-          )}
+          <Anchor component={Link} to="/login">
+            Перейти ко входу
+          </Anchor>
         </CenteredCard>
       )
     case 'error':

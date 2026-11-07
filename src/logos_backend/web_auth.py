@@ -15,9 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from logos_backend import auth
+from logos_backend import auth, mail
 from logos_backend.config import get_allowed_origins
-from logos_backend.security import new_token
+from logos_backend.security import InvalidEmailError, new_token, validate_email_address
 
 SESSION_COOKIE_NAME = "logos_session"
 CSRF_COOKIE_NAME = "logos_csrf"
@@ -34,15 +34,20 @@ MAX_EMAIL_LENGTH = 254
 router = APIRouter(prefix="/auth")
 
 
+
 class AdministratorLoginRequest(BaseModel):
     login: str = Field(max_length=MAX_LOGIN_LENGTH)
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
     remember: bool = False
 
 
-class ManagerLoginRequest(BaseModel):
+class ManagerOtpRequest(BaseModel):
     email: str = Field(max_length=MAX_EMAIL_LENGTH)
-    password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+
+
+class ManagerOtpVerify(BaseModel):
+    email: str = Field(max_length=MAX_EMAIL_LENGTH)
+    code: str = Field(pattern=r"^[0-9]{6}$")
     remember: bool = False
 
 
@@ -237,21 +242,69 @@ def administrator_login(
     return _authenticated(request, session, payload.remember)
 
 
-@router.post("/manager/login", dependencies=[Depends(require_csrf)])
-def manager_login(
-    payload: ManagerLoginRequest,
-    request: Request,
-) -> JSONResponse:
+
+@router.post("/manager/otp/request", dependencies=[Depends(require_csrf)])
+def request_manager_otp(payload: ManagerOtpRequest) -> JSONResponse:
     try:
-        session = auth.login_manager(
-            payload.email,
-            payload.password,
+        validate_email_address(payload.email)
+        mail.check_delivery_available()
+    except InvalidEmailError:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Invalid email address", "field": "email"},
+            headers={"Cache-Control": "no-store"},
+        )
+    except mail.MailDeliveryError:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Email delivery is temporarily unavailable"},
+            headers={"Cache-Control": "no-store"},
+        )
+    try:
+        code = auth.request_manager_otp(payload.email)
+    except auth.OtpRateLimitedError as exc:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": "Too many code requests",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+            headers={"Cache-Control": "no-store", "Retry-After": str(exc.retry_after_seconds)},
+        )
+    try:
+        mail.send_manager_otp(payload.email.strip(), code)
+    except mail.MailDeliveryError:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Email delivery is temporarily unavailable"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(
+        status_code=202,
+        content={"detail": "If the account exists, a sign-in code will be sent"},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/manager/otp/verify", dependencies=[Depends(require_csrf)])
+def verify_manager_otp(payload: ManagerOtpVerify, request: Request) -> JSONResponse:
+
+    try:
+        validate_email_address(payload.email)
+        session = auth.verify_manager_otp(
+            payload.email, payload.code,
             previous_session_token=request.cookies.get(SESSION_COOKIE_NAME),
         )
-    except auth.AccountLockedError as exc:
-        return _locked(exc.retry_after_seconds)
-    except auth.InvalidCredentialsError as exc:
-        return _invalid_credentials(exc.attempts_remaining)
+    except InvalidEmailError:
+        return JSONResponse(
+            status_code=422, content={"detail": "Invalid email address", "field": "email"},
+            headers={"Cache-Control": "no-store"},
+        )
+    except auth.OtpInvalidError:
+        return JSONResponse(
+            status_code=401, content={"detail": "Invalid or expired sign-in code"},
+            headers={"Cache-Control": "no-store"},
+        )
     return _authenticated(request, session, payload.remember)
 
 

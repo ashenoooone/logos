@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import secrets
+import string
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -19,11 +21,14 @@ from logos_backend.db import (
     administrators,
     immediate_transaction,
     login_attempts,
+    manager_otp_codes,
+    manager_otp_requests,
     managers,
     sessions,
 )
 from logos_backend.security import (
     consume_dummy_verification,
+    hash_password,
     new_token,
     normalize_email,
     token_digest,
@@ -47,14 +52,6 @@ class AdministratorRecord:
     login: str
     password_hash: str
 
-
-@dataclass(frozen=True)
-class ManagerRecord:
-    id: int
-    name: str
-    email: str
-    email_normalized: str
-    password_hash: str | None
 
 
 @dataclass(frozen=True)
@@ -96,6 +93,156 @@ class AccountLockedError(Exception):
 
 def _now(now: int | None) -> int:
     return clock.now_seconds() if now is None else now
+
+OTP_TTL_SECONDS = 600
+OTP_MAX_ATTEMPTS = 5
+OTP_REQUEST_COOLDOWN_SECONDS = 60
+
+
+class OtpInvalidError(Exception):
+    """Код недействителен, истёк или исчерпал число попыток."""
+
+
+class OtpRateLimitedError(Exception):
+    def __init__(self, retry_after_seconds: int) -> None:
+        self.retry_after_seconds = retry_after_seconds
+
+
+def request_manager_otp(email: str, now: int | None = None) -> str:
+    """Занимает окно запроса; usable код выпускается только активному менеджеру."""
+    timestamp = _now(now)
+    normalized = normalize_email(email)
+    code = "".join(secrets.choice(string.digits) for _ in range(6))
+    engine = _create_engine()
+    try:
+        with immediate_transaction(engine) as connection:
+            existing = connection.execute(
+                select(manager_otp_requests.c.requested_at).where(
+                    manager_otp_requests.c.email_normalized == normalized
+                )
+            ).scalar_one_or_none()
+            if existing is not None and timestamp < int(existing) + OTP_REQUEST_COOLDOWN_SECONDS:
+                raise OtpRateLimitedError(int(existing) + OTP_REQUEST_COOLDOWN_SECONDS - timestamp)
+            connection.execute(
+                sqlite_insert(manager_otp_requests)
+                .values(email_normalized=normalized, requested_at=timestamp)
+                .on_conflict_do_update(
+                    index_elements=[manager_otp_requests.c.email_normalized],
+                    set_={"requested_at": timestamp},
+                )
+            )
+            manager_id = connection.execute(
+                select(managers.c.id).where(
+                    managers.c.email_normalized == normalized,
+                    managers.c.password_hash.is_not(None),
+                )
+            ).scalar_one_or_none()
+            code_hash = hash_password(code)
+            if manager_id is not None:
+                connection.execute(
+                    sqlite_insert(manager_otp_codes)
+                    .values(
+                        manager_id=int(manager_id), code_hash=code_hash, created_at=timestamp,
+                        expires_at=timestamp + OTP_TTL_SECONDS, attempts=0,
+                        last_requested_at=timestamp,
+                    )
+                    .on_conflict_do_update(
+                        index_elements=[manager_otp_codes.c["manager_id"]],
+                        set_={
+                            "code_hash": code_hash, "created_at": timestamp,
+                            "expires_at": timestamp + OTP_TTL_SECONDS, "attempts": 0,
+                            "last_requested_at": timestamp,
+                        },
+                    )
+                )
+    finally:
+        engine.dispose()
+    return code
+
+
+def verify_manager_otp(
+    email: str,
+    code: str,
+    previous_session_token: str | None = None,
+    now: int | None = None,
+) -> LoginSession:
+    """Проверяет код и выдаёт сессию без возможности конкурентного повторного входа."""
+    timestamp = _now(now)
+    normalized = normalize_email(email)
+    engine = _create_engine()
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    managers.c.id, managers.c.name, managers.c.email,
+                    manager_otp_codes.c.code_hash, manager_otp_codes.c.expires_at,
+                    manager_otp_codes.c.attempts,
+                )
+                .join(manager_otp_codes, manager_otp_codes.c["manager_id"] == managers.c.id)
+                .where(
+                    managers.c.email_normalized == normalized,
+                    managers.c.password_hash.is_not(None),
+                )
+            ).mappings().first()
+        valid = False
+        verification_done = False
+        if (
+            row is not None
+            and int(row["expires_at"]) > timestamp
+            and int(row["attempts"]) < OTP_MAX_ATTEMPTS
+        ):
+            valid = verify_password(str(row["code_hash"]), code)
+            verification_done = True
+        if not verification_done:
+            consume_dummy_verification(code)
+        result: LoginSession | None = None
+        failure = False
+        with immediate_transaction(engine) as connection:
+            if row is None:
+                current = None
+            else:
+                manager_id = int(row["id"])
+                current = connection.execute(
+                    select(
+                        manager_otp_codes.c.code_hash, manager_otp_codes.c.expires_at,
+                        manager_otp_codes.c.attempts,
+                    ).where(manager_otp_codes.c["manager_id"] == manager_id)
+                ).mappings().first()
+            if (
+                row is None
+                or current is None
+                or int(current["expires_at"]) <= timestamp
+                or int(current["attempts"]) >= OTP_MAX_ATTEMPTS
+                or str(current["code_hash"]) != str(row["code_hash"])
+            ):
+                failure = True
+            elif not valid:
+                connection.execute(
+                    manager_otp_codes.update()
+                    .where(manager_otp_codes.c["manager_id"] == int(row["id"]))
+                    .values(attempts=manager_otp_codes.c.attempts + 1)
+                )
+                failure = True
+            else:
+                connection.execute(
+                    manager_otp_codes.delete().where(
+                        manager_otp_codes.c["manager_id"] == int(row["id"])
+                    )
+                )
+                subject = Subject(
+                    kind=MANAGER,
+                    id=int(row["id"]),
+                    name=str(row["name"]),
+                    email=str(row["email"]),
+                )
+                _revoke_session_in_transaction(connection, previous_session_token)
+                token = create_session_record(connection, subject, timestamp)
+                result = LoginSession(subject=subject, token=token)
+        if failure or result is None:
+            raise OtpInvalidError()
+        return result
+    finally:
+        engine.dispose()
 
 
 def get_attempt_state(scope: str, identifier: str) -> AttemptState:
@@ -252,37 +399,6 @@ def find_administrator() -> AdministratorRecord | None:
     )
 
 
-def find_manager_by_email(email: str) -> ManagerRecord | None:
-    normalized = normalize_email(email)
-    engine = _create_engine()
-    try:
-        with engine.connect() as connection:
-            row = (
-                connection.execute(
-                    select(
-                        managers.c.id,
-                        managers.c.name,
-                        managers.c.email,
-                        managers.c.email_normalized,
-                        managers.c.password_hash,
-                    ).where(managers.c.email_normalized == normalized)
-                )
-                .mappings()
-                .first()
-            )
-    finally:
-        engine.dispose()
-
-    if row is None:
-        return None
-    password_hash = row["password_hash"]
-    return ManagerRecord(
-        id=int(row["id"]),
-        name=str(row["name"]),
-        email=str(row["email"]),
-        email_normalized=str(row["email_normalized"]),
-        password_hash=str(password_hash) if password_hash is not None else None,
-    )
 
 
 def login_administrator(
@@ -352,74 +468,6 @@ def login_administrator(
     return issued
 
 
-def login_manager(
-    email: str,
-    password: str,
-    now: int | None = None,
-    previous_session_token: str | None = None,
-) -> LoginSession:
-    """Вход менеджера по нормализованному email; ожидающий менеджер войти не может.
-
-    Проверенный Argon2-хеш повторно сверяется с БД в той же пишущей
-    транзакции, где создаётся сессия. Поэтому вход со старым паролем,
-    параллельный завершению восстановления, не получает сессию, а старые
-    сессии менеджера не воскресают.
-    """
-    timestamp = _now(now)
-    identifier = normalize_email(email)
-    _ensure_not_locked(MANAGER_SCOPE, identifier, timestamp)
-
-    manager = find_manager_by_email(identifier)
-    verified_hash: str | None = None
-    if manager is not None and manager.password_hash is not None:
-        verified_hash = manager.password_hash
-        valid = verify_password(verified_hash, password)
-    else:
-        consume_dummy_verification(password)
-        valid = False
-
-    if not valid or manager is None or verified_hash is None:
-        _record_failure(MANAGER_SCOPE, identifier, timestamp)
-
-    issued: LoginSession | None = None
-    engine = _create_engine()
-    try:
-        with immediate_transaction(engine) as connection:
-            row = (
-                connection.execute(
-                    select(
-                        managers.c.id,
-                        managers.c.name,
-                        managers.c.email,
-                        managers.c.email_normalized,
-                        managers.c.password_hash,
-                    ).where(managers.c.id == manager.id)
-                )
-                .mappings()
-                .first()
-            )
-            if (
-                row is not None
-                and row["password_hash"] is not None
-                and str(row["password_hash"]) == verified_hash
-                and str(row["email_normalized"]) == identifier
-            ):
-                subject = Subject(
-                    kind=MANAGER,
-                    id=int(row["id"]),
-                    name=str(row["name"]),
-                    email=str(row["email"]),
-                )
-                _clear_attempts(connection, MANAGER_SCOPE, identifier)
-                _revoke_session_in_transaction(connection, previous_session_token)
-                token = create_session_record(connection, subject, timestamp)
-                issued = LoginSession(subject=subject, token=token)
-    finally:
-        engine.dispose()
-
-    if issued is None:
-        _record_failure(MANAGER_SCOPE, identifier, timestamp)
-    return issued
 
 
 def create_session_record(

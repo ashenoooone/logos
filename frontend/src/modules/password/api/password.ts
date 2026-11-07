@@ -3,12 +3,11 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiPost, type ApiErrorBody } from '@/common/api-client'
 import type { Subject } from '@/modules/session'
 
-/** `invitation` — первый пароль по приглашению; `reset` — восстановление. */
-export type LinkFlow = 'invitation' | 'reset'
+/** Первый пароль менеджера по одноразовому приглашению. */
+export type LinkFlow = 'invitation'
 
 const PATHS: Record<LinkFlow, { preview: string; submit: string }> = {
   invitation: { preview: '/invitations/preview', submit: '/invitations/accept' },
-  reset: { preview: '/password-reset/preview', submit: '/password-reset/complete' },
 }
 
 export type PreviewResult =
@@ -20,13 +19,6 @@ export type SubmitResult =
   | { kind: 'success'; subject: Subject }
   | { kind: 'invalid-password'; message: string }
   | { kind: 'expired' }
-  | { kind: 'failed'; status: number }
-
-export type ResetRequestResult =
-  | { kind: 'accepted' }
-  | { kind: 'cooldown'; retryAfterSeconds: number }
-  | { kind: 'invalid-email' }
-  | { kind: 'delivery-failed' }
   | { kind: 'failed'; status: number }
 
 const PASSWORD_ERRORS: Record<string, string> = {
@@ -90,19 +82,3 @@ export async function submitPassword(
   return { kind: 'failed', status: response.status }
 }
 
-export async function requestPasswordReset(email: string): Promise<ResetRequestResult> {
-  const response = await apiPost<ApiErrorBody>('/password-reset/request', { email })
-  if (response.status === 202) {
-    return { kind: 'accepted' }
-  }
-  if (response.status === 429 && response.data?.retry_after_seconds !== undefined) {
-    return { kind: 'cooldown', retryAfterSeconds: response.data.retry_after_seconds }
-  }
-  if (response.status === 422) {
-    return { kind: 'invalid-email' }
-  }
-  if (response.status === 502) {
-    return { kind: 'delivery-failed' }
-  }
-  return { kind: 'failed', status: response.status }
-}

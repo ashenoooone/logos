@@ -125,11 +125,9 @@ def login_administrator(client: TestClient) -> None:
 
 
 def login_manager(client: TestClient, email: str, password: str) -> Any:
-    return client.post(
-        "/auth/manager/login",
-        json={"email": email, "password": password, "remember": False},
-        headers=csrf_headers(client),
-    )
+    from support import login_manager as authenticate_manager
+
+    return authenticate_manager(client, email, password)
 
 
 def add_active_manager(email: str = "active@example.com", password: str = "correct1") -> None:

@@ -19,7 +19,6 @@ from logos_backend.web_auth import (
     MAX_EMAIL_LENGTH,
     MAX_PASSWORD_LENGTH,
     SESSION_COOKIE_NAME,
-    _locked,
     _subject_payload,
     require_csrf,
     require_subject,
@@ -128,15 +127,6 @@ def change_password(payload: PasswordBody, subject: Manager, request: Request) -
             else "new_password"
         )
         return _field_error(field, str(exc))
-    except auth.InvalidCredentialsError as exc:
-        return _json(
-            {
-                "detail": "Invalid current password",
-                "field": "current_password",
-                "attempts_remaining": exc.attempts_remaining,
-            },
-            status_code=422,
-        )
-    except auth.AccountLockedError as exc:
-        return _locked(exc.retry_after_seconds)
+    except account.CurrentPasswordInvalidError:
+        return _field_error("current_password", "Current password is incorrect")
     return _json({}, status_code=200)

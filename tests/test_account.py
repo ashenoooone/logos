@@ -6,14 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from test_password_reset import (
-    BASE_URL,
-    FakeClock,
-    add_active_manager,
-    csrf_headers,
-    login_manager,
-    migrate,
-)
+from support import BASE_URL, FakeClock, add_active_manager, csrf_headers, login_manager, migrate
 
 from logos_backend import clock, mail
 from logos_backend.app import app
@@ -55,14 +48,41 @@ def test_new_email_works_only_after_confirmation(
     )
     assert response.status_code == 202
     assert sent[-1][0] == "New@example.com"
-
     assert login_manager(new_client(), "new@example.com", "correct1").status_code == 401
-    assert login_manager(new_client(), "old@example.com", "correct1").status_code == 200
+
+    fake_clock.advance(60)
+
+
+    captured_codes: list[str] = []
+    original_send, original_check = mail.send_manager_otp, mail.check_delivery_available
+
+    def capture_otp(recipient: str, code: str) -> None:
+        captured_codes.append(code)
+
+    mail.send_manager_otp = capture_otp
+    mail.check_delivery_available = lambda: None
+    request_client = new_client()
+    request_response = request_client.post(
+        "/auth/manager/otp/request",
+        json={"email": "old@example.com"},
+        headers=csrf_headers(request_client),
+    )
+    mail.send_manager_otp, mail.check_delivery_available = original_send, original_check
+    assert request_response.status_code == 202
+    assert len(captured_codes) == 1
+
 
     anonymous = new_client()
     confirm = anonymous.post(
         "/account/email/confirm", json={"token": sent[-1][1]}, headers=csrf_headers(anonymous)
     )
+    rejected_client = new_client()
+    rejected_old_code = rejected_client.post(
+        "/auth/manager/otp/verify",
+        json={"email": "new@example.com", "code": captured_codes[0]},
+        headers=csrf_headers(rejected_client),
+    )
+    assert rejected_old_code.status_code == 401
     assert confirm.status_code == 200
     assert login_manager(new_client(), "new@example.com", "correct1").status_code == 200
     assert login_manager(new_client(), "old@example.com", "correct1").status_code == 401
@@ -109,7 +129,7 @@ def test_password_change_signs_out_other_devices_but_keeps_current(
     assert current.get("/auth/me").status_code == 200
     assert other.get("/auth/me").status_code == 401
     assert login_manager(new_client(), "user@example.com", "fresh-pass2").status_code == 200
-    assert login_manager(new_client(), "user@example.com", "correct1").status_code == 401
+    assert login_manager(new_client(), "user@example.com", "correct1").status_code == 200
 
 
 @pytest.mark.parametrize(

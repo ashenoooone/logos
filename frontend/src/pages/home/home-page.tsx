@@ -1,3 +1,4 @@
+import { TELEGRAM_LABEL } from '@/common/channel-label'
 import { Container, Stack, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -57,7 +58,7 @@ function AdminTiles() {
         )}
       </HubTile>
 
-      <HubTile to="/channels" tone={ch?.status === 'connected' ? 'green' : 'night'} title="Канал Telegram">
+      <HubTile to="/channels" tone={ch?.status === 'connected' ? 'green' : 'night'} title={`Канал ${TELEGRAM_LABEL}`}>
         <Text className="logos-hub-value-sm">{ch?.bot_username ? `@${ch.bot_username}` : 'Бот не подключён'}</Text>
         {ch && (
           <Pills>
@@ -80,7 +81,7 @@ function AdminTiles() {
 }
 
 function ManagerTiles() {
-  const data = useQuery(conversationsQueryOptions).data
+  const data = useQuery(conversationsQueryOptions()).data
   const list = data?.kind === 'success' ? data.value : null
   const waiting = list?.conversations.filter((item) => item.unread_count > 0).length
   const failed = list?.conversations.filter((item) => item.last_message?.status === 'failed').length ?? 0

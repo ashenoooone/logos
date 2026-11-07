@@ -46,6 +46,8 @@ EMAIL_CHANGES_TABLE = "email_changes"
 CHANNELS_TABLE = "channels"
 CONVERSATIONS_TABLE = "conversations"
 MESSAGES_TABLE = "messages"
+MANAGER_OTP_CODES_TABLE = "manager_otp_codes"
+MANAGER_OTP_REQUESTS_TABLE = "manager_otp_requests"
 TAGS_TABLE = "tags"
 CONVERSATION_TAGS_TABLE = "conversation_tags"
 INBOX_PREFERENCES_TABLE = "inbox_preferences"
@@ -67,6 +69,8 @@ REQUIRED_TABLES = frozenset(
         CONVERSATION_TAGS_TABLE,
         INBOX_PREFERENCES_TABLE,
         SAVED_FILTERS_TABLE,
+        MANAGER_OTP_CODES_TABLE,
+        MANAGER_OTP_REQUESTS_TABLE,
     }
 )
 
@@ -106,6 +110,28 @@ login_attempts = Table(
         name="ck_login_attempts_scope",
     ),
     CheckConstraint("failed_count >= 0", name="ck_login_attempts_count"),
+)
+
+manager_otp_codes = Table(
+    MANAGER_OTP_CODES_TABLE,
+    metadata,
+    Column(
+        "manager_id", Integer, ForeignKey("managers.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("code_hash", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("expires_at", Integer, nullable=False),
+    Column("attempts", Integer, nullable=False, default=0),
+    Column("last_requested_at", Integer, nullable=False),
+    CheckConstraint("attempts >= 0 AND attempts <= 5", name="ck_manager_otp_attempts"),
+    CheckConstraint("expires_at > created_at", name="ck_manager_otp_expiry"),
+)
+
+manager_otp_requests = Table(
+    MANAGER_OTP_REQUESTS_TABLE,
+    metadata,
+    Column("email_normalized", String, primary_key=True),
+    Column("requested_at", Integer, nullable=False),
 )
 
 sessions = Table(
@@ -227,8 +253,9 @@ messages = Table(
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
     ),
-    Column("direction", String, nullable=False),
     Column("telegram_message_id", Integer, nullable=True),
+    Column("direction", String, nullable=False),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="SET NULL"), nullable=True),
     Column("kind", String, nullable=False),
     Column("text", String, nullable=True),
     Column("file_name", String, nullable=True),

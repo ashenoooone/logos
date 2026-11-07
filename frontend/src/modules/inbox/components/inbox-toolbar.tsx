@@ -1,3 +1,4 @@
+import { TELEGRAM_LABEL } from '@/common/channel-label'
 import { Anchor, Badge, Chip, CloseButton, Group, Stack, Text, Title } from '@mantine/core'
 import type { ReactNode } from 'react'
 
@@ -11,7 +12,7 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: 'unread', label: 'Непрочитанные сверху' },
 ]
 
-const CHANNELS = [{ value: 'telegram', label: 'Telegram' }]
+const CHANNELS = [{ value: 'telegram', label: TELEGRAM_LABEL }]
 
 const STATUSES = [
   { value: 'unread', label: 'Есть непрочитанные' },

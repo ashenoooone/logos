@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from logos_backend.db import (
     conversations,
     immediate_transaction,
     inbox_preferences,
+    managers,
     messages,
     saved_filters,
 )
@@ -116,21 +118,46 @@ def _known(chat_id: int, message_id: int) -> bool:
         engine.dispose()
 
 
-def _touch_conversation(connection: Connection, chat_id: int, name: str | None, at: int) -> int:
-    """Создаёт диалог или поднимает его время последнего сообщения; возвращает id."""
+def _touch_conversation(
+    connection: Connection,
+    chat_id: int,
+    name: str | None,
+    at: int,
+    *,
+    update_last_message: bool = True,
+) -> int:
+    """Создаёт диалог, обновляя его время только для реальных сообщений."""
     values: dict[str, Any] = {"chat_id": chat_id, "name": name or "", "created_at": at}
-    changes: dict[str, Any] = {
-        "last_message_at": func.max(conversations.c.last_message_at, at),
-    }
+    changes: dict[str, Any] = {}
+    if update_last_message:
+        changes["last_message_at"] = func.max(conversations.c.last_message_at, at)
     if name:
         changes["name"] = name
-    return int(
-        connection.execute(
-            insert(conversations)
-            .values(**values, last_message_at=at)
-            .on_conflict_do_update(index_elements=[conversations.c.chat_id], set_=changes)
-            .returning(conversations.c.id)
-        ).scalar_one()
+    statement = insert(conversations).values(**values, last_message_at=at)
+    if changes:
+        statement = statement.on_conflict_do_update(
+            index_elements=[conversations.c.chat_id], set_=changes
+        )
+    else:
+        statement = statement.on_conflict_do_update(
+            index_elements=[conversations.c.chat_id], set_={"name": name or conversations.c.name}
+        )
+    return int(connection.execute(statement.returning(conversations.c.id)).scalar_one())
+
+
+def _is_start_command(text: str) -> bool:
+    """Совпадает с командным токеном Python split и форматом имени бота Telegram."""
+    token = text.strip().split(maxsplit=1)
+    if not token:
+        return False
+    command = token[0].casefold()
+    if command == "/start":
+        return True
+    if not command.startswith("/start@") or len(command) == 7:
+        return False
+    return all(
+        character.isascii() and (character.isalnum() or character == "_")
+        for character in command[7:]
     )
 
 
@@ -152,8 +179,6 @@ def store_update(token: str, update_: dict[str, Any]) -> None:
         try:
             content = channels.download_file(token, file_id, MAX_FILE_BYTES)
         except (channels.TelegramUnavailableError, channels.InvalidTokenError):
-            # ponytail: файл не скачался — показываем «файл недоступен» без
-            # повторной попытки; повтор нужен, если такие сбои станут частыми.
             logger.warning("Could not download a Telegram attachment")
             content = None
         if content is not None:
@@ -162,6 +187,16 @@ def store_update(token: str, update_: dict[str, Any]) -> None:
 
     at = int(message.get("date") or clock.now_seconds())
     text = message.get("text") if kind == "text" else message.get("caption")
+    if kind == "text" and isinstance(text, str) and _is_start_command(text):
+        engine = _create_engine()
+        try:
+            with immediate_transaction(engine) as connection:
+                _touch_conversation(
+                    connection, chat_id, _client_name(chat), at, update_last_message=False
+                )
+        finally:
+            engine.dispose()
+        return
     engine = _create_engine()
     try:
         with immediate_transaction(engine) as connection:
@@ -180,13 +215,13 @@ def store_update(token: str, update_: dict[str, Any]) -> None:
                 )
             )
     except IntegrityError:
-        if file_path:  # параллельный дубль уже сохранён
+        if file_path:
             (attachments_dir() / file_path).unlink(missing_ok=True)
     finally:
         engine.dispose()
 
 
-def _message_payload(row: RowMapping) -> dict[str, object]:
+def _message_payload(row: Mapping[str, Any]) -> dict[str, object]:
     file = None
     if row["file_name"] is not None:
         file = {
@@ -202,6 +237,7 @@ def _message_payload(row: RowMapping) -> dict[str, object]:
         "file": file,
         "status": row["status"],
         "created_at": _iso(int(row["created_at"])),
+        "author": row["author"],
     }
 
 
@@ -209,9 +245,10 @@ def _unread_filter() -> Any:
     return and_(messages.c.direction == IN, messages.c.read_at.is_(None))
 
 
-def list_conversations() -> dict[str, object]:
-    """Все диалоги, свежие сверху, с последним сообщением и числом непрочитанных."""
-    inner = messages.alias("inner")  # иначе подзапросы скоррелируют с внешним messages
+def list_conversations(query: str | None = None) -> dict[str, object]:
+    """Все диалоги; поиск ограничивает диалоги, но не глобальные счётчики."""
+    search = (query or "").strip().casefold()
+    inner = messages.alias("inner")
     last_id = (
         select(func.max(inner.c.id))
         .where(inner.c.conversation_id == conversations.c.id)
@@ -234,10 +271,29 @@ def list_conversations() -> dict[str, object]:
             conversations.c.last_message_at,
             unread.label("unread_count"),
             *[column for column in messages.c if column.name != "conversation_id"],
+            managers.c.name.label("manager_name"),
         )
         .select_from(conversations.outerjoin(messages, messages.c.id == last_id))
+        .outerjoin(managers, messages.c.manager_id == managers.c.id)
         .order_by(conversations.c.last_message_at.desc(), conversations.c.id.desc())
     )
+    if search:
+        engine = _create_engine()
+        try:
+            with engine.connect() as connection:
+                texts = connection.execute(
+                    select(messages.c.conversation_id, messages.c.text).where(
+                        messages.c.text.is_not(None)
+                    )
+                ).all()
+        finally:
+            engine.dispose()
+        conversation_ids = {
+            int(conversation_id)
+            for conversation_id, text in texts
+            if search in str(text).casefold()
+        }
+        statement = statement.where(conversations.c.id.in_(conversation_ids))
     engine = _create_engine()
     try:
         with engine.connect() as connection:
@@ -245,6 +301,12 @@ def list_conversations() -> dict[str, object]:
             last_incoming_id, incoming_total = connection.execute(
                 select(func.max(messages.c.id), func.count()).where(messages.c.direction == IN)
             ).one()
+            unread_total = connection.execute(
+                select(func.count()).where(
+                    messages.c.direction == IN,
+                    messages.c.read_at.is_(None),
+                )
+            ).scalar_one()
             tag_map = tags.conversation_tag_map(connection)
     finally:
         engine.dispose()
@@ -255,23 +317,26 @@ def list_conversations() -> dict[str, object]:
             "name": row["name"],
             "last_message_at": _iso(int(row["last_message_at"])),
             "unread_count": int(row["unread_count"]),
-            "last_message": _message_payload(row) if row["id"] is not None else None,
+            "last_message": _message_payload(
+                {**row, "author": row["name"] if row["direction"] == IN else row["manager_name"]}
+            )
+            if row["id"] is not None
+            else None,
             "tags": tag_map.get(int(row["conversation_id"]), []),
         }
         for row in rows
     ]
     return {
         "conversations": items,
-        "unread_total": sum(int(row["unread_count"]) for row in rows),
+        "unread_total": int(unread_total),
         "last_incoming_id": last_incoming_id,
-        # Счётчик всех входящих: разница даёт «N новых сообщений» (#7).
         "incoming_total": int(incoming_total),
     }
 
 
+
 def get_conversation(conversation_id: int) -> dict[str, object]:
     """Диалог со всей перепиской по порядку."""
-    # ponytail: вся переписка одним ответом; постраничность — когда диалоги станут длинными.
     engine = _create_engine()
     try:
         with engine.connect() as connection:
@@ -284,7 +349,10 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
             )
             rows = (
                 connection.execute(
-                    select(messages)
+                    select(*messages.c, managers.c.name.label("manager_name"))
+                    .select_from(
+                        messages.outerjoin(managers, messages.c.manager_id == managers.c.id)
+                    )
                     .where(messages.c.conversation_id == conversation_id)
                     .order_by(messages.c.id)
                 )
@@ -303,7 +371,19 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
             "name": conversation["name"],
             "tags": conversation_tags,
         },
-        "messages": [_message_payload(row) for row in rows],
+        "messages": [
+            _message_payload(
+                {
+                    **row,
+                    "author": (
+                        conversation["name"]
+                        if row["direction"] == IN
+                        else row["manager_name"]
+                    ),
+                }
+            )
+            for row in rows
+        ],
     }
 
 
@@ -332,8 +412,8 @@ def _load_message(message_id: int) -> RowMapping | None:
         with engine.connect() as connection:
             return (
                 connection.execute(
-                    select(messages, conversations.c.chat_id)
-                    .join(conversations, conversations.c.id == messages.c.conversation_id)
+                    select(*messages.c, conversations.c.chat_id)
+                    .select_from(messages.join(conversations))
                     .where(messages.c.id == message_id)
                 )
                 .mappings()
@@ -381,12 +461,22 @@ def _deliver(message_id: int) -> dict[str, object]:
         channels.InvalidTokenError,
         OSError,
     ):
-        # Таймаут тоже сюда: результат неизвестен, повтор — вручную (ADR-0007).
         values = {"status": FAILED}
     engine = _create_engine()
     try:
         with engine.begin() as connection:
             saved = (
+                connection.execute(
+                    select(*messages.c, managers.c.name.label("manager_name"))
+                    .select_from(
+                        messages.outerjoin(managers, messages.c.manager_id == managers.c.id)
+                    )
+                    .where(messages.c.id == message_id)
+                )
+                .mappings()
+                .one()
+            )
+            updated = (
                 connection.execute(
                     update(messages)
                     .where(messages.c.id == message_id)
@@ -396,15 +486,18 @@ def _deliver(message_id: int) -> dict[str, object]:
                 .mappings()
                 .one()
             )
+            return _message_payload({**updated, "author": saved["manager_name"]})
     finally:
         engine.dispose()
-    return _message_payload(saved)
 
 
 def reply(
-    conversation_id: int, text: str, file: tuple[str, bytes] | None = None
+    conversation_id: int,
+    text: str,
+    manager_id: int,
+    file: tuple[str, bytes] | None = None,
 ) -> dict[str, object]:
-    """Сохраняет ответ (текст не теряется при сбое) и сразу отправляет его."""
+    """Сохраняет ответ с автором и сразу отправляет его."""
     file_path = _save_file(file[1]) if file else None
     now = clock.now_seconds()
     engine = _create_engine()
@@ -421,6 +514,7 @@ def reply(
                 .values(
                     conversation_id=conversation_id,
                     direction=OUT,
+                    manager_id=manager_id,
                     kind="document" if file else "text",
                     text=text or None,
                     file_name=file[0] if file else None,
@@ -463,10 +557,22 @@ def retry(message_id: int) -> dict[str, object]:
 
 def attachment(message_id: int) -> tuple[Path, str, str] | None:
     """Путь, имя и тип сохранённого файла сообщения."""
-    row = _load_message(message_id)
-    if row is None or row["file_path"] is None:
+    engine = _create_engine()
+    try:
+        with engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(messages.c.file_path, messages.c.file_name, messages.c.kind).where(
+                        messages.c.id == message_id
+                    )
+                )
+                .first()
+            )
+    finally:
+        engine.dispose()
+    if row is None or row.file_path is None or row.file_name is None:
         return None
-    return attachments_dir() / str(row["file_path"]), str(row["file_name"]), str(row["kind"])
+    return attachments_dir() / str(row.file_path), str(row.file_name), str(row.kind)
 
 
 def get_preferences(manager_id: int) -> dict[str, object]:

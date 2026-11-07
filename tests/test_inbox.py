@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_password_reset import (
+from support import (
     BASE_URL,
     add_active_manager,
     add_administrator,
@@ -80,6 +80,12 @@ def test_receive_read_reply_and_retry(database: None, bot_api: dict[str, Any]) -
     [conversation] = listing["conversations"]
     assert conversation["name"] == "Мария К."
     assert conversation["last_message"]["kind"] == "photo"
+    assert conversation["last_message"]["author"] == "Мария К."
+    historical_search = client.get("/conversations", params={"q": "ГДЕ МОЙ"})
+    assert [item["id"] for item in historical_search.json()["conversations"]] == [
+        conversation["id"]
+    ]
+    assert historical_search.json()["unread_total"] == 2
 
     thread = client.get(f"/conversations/{conversation['id']}/messages").json()
     photo = thread["messages"][1]
@@ -96,6 +102,7 @@ def test_receive_read_reply_and_retry(database: None, bot_api: dict[str, Any]) -
         f"/conversations/{conversation['id']}/messages", json={"text": "Проверяю"}, headers=headers
     ).json()["message"]
     assert sent["status"] == "delivered"
+    assert sent["author"] == "Active Manager"
 
     bot_api["fail"] = True
     failed = client.post(
@@ -105,10 +112,12 @@ def test_receive_read_reply_and_retry(database: None, bot_api: dict[str, Any]) -
     ).json()["message"]
     assert failed["status"] == "failed"
     assert failed["text"] == "Накладная"
+    assert failed["author"] == "Active Manager"
 
     bot_api["fail"] = False
     retried = client.post(f"/messages/{failed['id']}/retry", headers=headers).json()["message"]
     assert retried["status"] == "delivered"
+    assert retried["author"] == "Active Manager"
     assert bot_api["sent"][-1][2] == ("document", "a.pdf", b"%PDF")
     assert client.post(f"/messages/{failed['id']}/retry", headers=headers).status_code == 409
 

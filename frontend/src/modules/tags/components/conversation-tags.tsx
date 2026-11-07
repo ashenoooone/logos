@@ -6,7 +6,8 @@ import { failureMessage, type ApiResponse } from '@/common/api-client'
 import { useSession } from '@/modules/session'
 
 import {
-  attachTag,
+  attachTagById,
+  createAndAttachTag,
   confirmTagDelete,
   deleteOwnTag,
   detachTag,
@@ -93,7 +94,9 @@ export function ConversationTags({ conversationId, tags }: { conversationId: num
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && query && !event.nativeEvent.isComposing) {
                   event.preventDefault()
-                  void run(() => attachTag(conversationId, exact?.name ?? search))
+                  void run(() =>
+                    exact ? attachTagById(conversationId, exact.id) : createAndAttachTag(conversationId, search),
+                  )
                 }
               }}
             />
@@ -101,8 +104,7 @@ export function ConversationTags({ conversationId, tags }: { conversationId: num
               <Group key={tag.id} gap={4} wrap="nowrap" justify="space-between">
                 <UnstyledButton
                   disabled={pending}
-                  onClick={() => void run(() => attachTag(conversationId, tag.name))}
-                  style={{ flex: 1, minWidth: 0 }}
+                  onClick={() => void run(() => attachTagById(conversationId, tag.id))}
                 >
                   <Text size="sm" truncate>
                     {tag.name}{' '}
@@ -130,7 +132,11 @@ export function ConversationTags({ conversationId, tags }: { conversationId: num
                 variant="subtle"
                 justify="flex-start"
                 disabled={pending}
-                onClick={() => void run(() => attachTag(conversationId, exact?.name ?? search))}
+                onClick={() =>
+                  void run(() =>
+                    exact ? attachTagById(conversationId, exact.id) : createAndAttachTag(conversationId, search),
+                  )
+                }
               >
                 {exact ? `+ Добавить «${exact.name}»` : `+ Создать тег «${search.trim()}»`}
               </Button>

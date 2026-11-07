@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from logos_backend import auth, tags
 from logos_backend.web_account import Manager
@@ -15,6 +15,11 @@ from logos_backend.web_auth import require_administrator, require_csrf
 router = APIRouter()
 
 Administrator = Annotated[auth.Subject, Depends(require_administrator)]
+
+
+class AttachBody(BaseModel):
+    tag_id: StrictInt | None = None
+    name: str | None = Field(default=None, max_length=tags.MAX_TAG_LENGTH + 100)
 
 
 class NameBody(BaseModel):
@@ -56,11 +61,25 @@ def delete_own_tag(tag_id: int, subject: Manager) -> JSONResponse:
 
 
 @router.post("/conversations/{conversation_id}/tags", dependencies=[Depends(require_csrf)])
-def attach(conversation_id: int, payload: NameBody, subject: Manager) -> JSONResponse:
+def attach(conversation_id: int, payload: AttachBody, subject: Manager) -> JSONResponse:
+    has_id = payload.tag_id is not None
+    has_name = payload.name is not None
+    if has_id == has_name:
+        return _json({"detail": "Exactly one of tag_id or name is required"}, status_code=422)
     try:
-        return _json({"tags": tags.attach(conversation_id, payload.name, subject.id)})
+        if has_id:
+            assert payload.tag_id is not None
+            return _json({"tags": tags.attach_by_id(conversation_id, payload.tag_id, subject.id)})
+        assert payload.name is not None
+        return _json({"tags": tags.attach_by_name(conversation_id, payload.name, subject.id)})
     except tags.InvalidTagNameError:
         return _invalid_name()
+    except tags.TagExistsError:
+        return _exists()
+    except tags.TagNotFoundError:
+        return _not_found()
+    except tags.TagForbiddenError:
+        return _json({"detail": "Cannot attach invisible tag"}, status_code=403)
     except tags.ConversationNotFoundError:
         return _not_found("Conversation")
 
