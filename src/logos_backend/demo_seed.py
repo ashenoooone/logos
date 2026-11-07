@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 DEMO_BOT_TOKEN = os.environ.get("LOGOS_DEMO_BOT_TOKEN", "")
 MANAGER_PASSWORD = "demo1234"
 
+# Вне диапазона реальных id Telegram, чтобы не слиться с живым чатом.
+DEMO_CHAT_ID_BASE = 9_000_000_000_000
 MANAGERS = [
     ("Анна Смирнова", "anna@demo.logos"),
     ("Игорь Петров", "igor@demo.logos"),
@@ -209,8 +211,7 @@ def seed(connection: Connection, now: int) -> None:
         conversation_id = connection.execute(
             insert(conversations)
             .values(
-                # Вне диапазона реальных id Telegram, чтобы не слиться с живым чатом.
-                chat_id=9_000_000_000_000 + index,
+                chat_id=DEMO_CHAT_ID_BASE + index,
                 name=name,
                 created_at=times[0],
                 last_message_at=times[-1],

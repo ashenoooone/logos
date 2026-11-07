@@ -246,7 +246,7 @@ def _unread_filter() -> Any:
 
 
 def list_conversations(query: str | None = None) -> dict[str, object]:
-    """Все диалоги; поиск ограничивает диалоги, но не глобальные счётчики."""
+    """Все диалоги; поиск по имени клиента и тексту ограничивает диалоги, не счётчики."""
     search = (query or "").strip().casefold()
     inner = messages.alias("inner")
     last_id = (
@@ -282,12 +282,13 @@ def list_conversations(query: str | None = None) -> dict[str, object]:
         try:
             with engine.connect() as connection:
                 texts = connection.execute(
-                    select(messages.c.conversation_id, messages.c.text).where(
-                        messages.c.text.is_not(None)
-                    )
+                    select(messages.c.conversation_id, messages.c.text)
+                    .where(messages.c.text.is_not(None))
+                    .union_all(select(conversations.c.id, conversations.c.name))
                 ).all()
         finally:
             engine.dispose()
+        # ponytail: casefold в Python — SQLite LOWER не знает кириллицу; FTS при росте объёма.
         conversation_ids = {
             int(conversation_id)
             for conversation_id, text in texts

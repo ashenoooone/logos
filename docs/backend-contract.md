@@ -172,7 +172,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 
 | Эндпоинт | Тело | Успех | Ошибки |
 |---|---|---|---|
-| `GET /conversations` | optional `?q=<string>` | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}]}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху | — |
+| `GET /conversations` | optional `?q=<string>` (подстрока без учёта регистра в имени клиента или тексте сообщений) | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}]}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху | — |
 | `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
 | `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
 | `POST /conversations/{id}/messages` | `{"text"}` (1–4096 после trim) | `200 {"message"}`, `status` = `delivered`/`failed` | `422 field=text`; `404` |

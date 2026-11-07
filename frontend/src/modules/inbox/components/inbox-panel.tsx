@@ -15,6 +15,7 @@ import {
   Loader,
   Paper,
   ScrollArea,
+  Skeleton,
   Stack,
   Text,
   TextInput,
@@ -104,7 +105,7 @@ function preview(message: Message | null) {
   if (!message) {
     return ''
   }
-  const prefix = message.direction === 'out' ? 'Вы: ' : ''
+  const prefix = message.direction === 'out' ? `${message.author ?? 'Менеджер'}: ` : ''
   if (message.kind === 'unsupported') {
     return `${prefix}Неподдерживаемое сообщение`
   }
@@ -144,7 +145,8 @@ export function InboxPanel() {
   const sort = prefs?.sort ?? 'newest'
   const currentSnapshot = snapshot?.query === search ? snapshot : null
   const fresh = value && currentSnapshot ? Math.max(0, value.incoming_total - currentSnapshot.incoming) : 0
-  const listPending = list.isPending || list.isFetching
+  // Только первая загрузка запроса; фоновый опрос и фильтры (на клиенте) без индикатора.
+  const listPending = list.isPending
   const listFailed = data?.kind === 'failed'
 
   // Query changes get a new snapshot; existing order remains frozen within that query.
@@ -238,7 +240,6 @@ export function InboxPanel() {
           rightSectionPointerEvents={search ? 'auto' : 'none'}
           mb="sm"
         />
-        {listPending && <Loader size="xs" aria-label="Поиск диалогов" />}
         <InboxToolbar
           sort={sort}
           onSort={changeSort}
@@ -309,6 +310,13 @@ export function InboxPanel() {
                   {search && <Button size="xs" variant="default" onClick={() => setSearch('')}>Очистить поиск</Button>}
                 </Stack>
               )}
+              {listPending && !listFailed && (
+                <Box aria-busy aria-label="Поиск диалогов">
+                  {[0, 1, 2, 3, 4, 5].map((index) => (
+                    <ConversationRowSkeleton key={index} />
+                  ))}
+                </Box>
+              )}
               {rows.map((item) => (
                 <ConversationRow
                   key={item.id}
@@ -338,6 +346,29 @@ export function InboxPanel() {
   )
 }
 
+
+/** Повторяет разметку ConversationRow: аватар, имя + канал + время, превью. */
+function ConversationRowSkeleton() {
+  return (
+    <Box px="md" py="sm" style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}>
+      <Group gap="sm" wrap="nowrap" align="flex-start">
+        <Skeleton circle height={38} style={{ flexShrink: 0 }} />
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Group justify="space-between" wrap="nowrap" gap="xs" h={22}>
+            <Group gap={6} wrap="nowrap">
+              <Skeleton height={12} width={120} radius="xl" />
+              <Skeleton height={14} width={56} radius="xl" />
+            </Group>
+            <Skeleton height={10} width={64} radius="xl" />
+          </Group>
+          <Group h={22} align="center">
+            <Skeleton height={10} width="80%" radius="xl" />
+          </Group>
+        </Box>
+      </Group>
+    </Box>
+  )
+}
 
 function ConversationRow({
   item,
