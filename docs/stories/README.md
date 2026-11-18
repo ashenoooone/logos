@@ -19,6 +19,21 @@
 | [#8](https://github.com/ashenoooone/logos/issues/8) | 4.2 Классификация тегами | [08-tags.md](08-tags.md) | LOG-32.png | 2026-11-04 08:16:36 |
 | [#11](https://github.com/ashenoooone/logos/issues/11) | 1.1 Шаблоны ответов | [09-reply-templates.md](09-reply-templates.md) | ID-48.png | 2026-11-18 21:09:50 |
 
+## Спринт 2 (2026-11-19)
+
+Истории колонки «В спринте» перенесены из YouGile в GitHub 2026-11-19. Локальных снимков тел нет: источник требований — тела issues, там же критерии приёмки, макеты и обсуждение из YouGile.
+
+| GitHub | История | YouGile | Мерж в `main` |
+|---|---|---|---|
+| [#11](https://github.com/ashenoooone/logos/issues/11) | 1.1 Шаблоны ответов | LOG-48 | `cfb0ead` |
+| [#12](https://github.com/ashenoooone/logos/issues/12) | 1.2 Закрепление диалогов | LOG-49 | `3a8ee39` |
+| [#13](https://github.com/ashenoooone/logos/issues/13) | 2.1 История обращений клиента | LOG-50 | `0ec6f31` |
+| [#14](https://github.com/ashenoooone/logos/issues/14) | 2.2 Заметки о клиентах | LOG-51 | `73682f8` |
+| [#15](https://github.com/ashenoooone/logos/issues/15) | 3.1 Внутренние комментарии | LOG-52 | `8581cc4` |
+| [#16](https://github.com/ashenoooone/logos/issues/16) | 3.2 Передача обращений менеджерам | LOG-53 | `7a463ac` |
+| [#17](https://github.com/ashenoooone/logos/issues/17) | 4.1 Мониторинг статистики | LOG-54 | `8f0fa7f` |
+| [#18](https://github.com/ashenoooone/logos/issues/18) | 5.1 Журнал действий в системе | LOG-55 | `a5c55da` |
+
 ## Зависимости и рекомендуемая последовательность
 
 Это рабочая интерпретация зависимостей, **не утверждённый порядок спринта**. Номер issue сам по себе не задаёт приоритет.
