@@ -17,6 +17,7 @@ import {
   ScrollArea,
   Skeleton,
   Stack,
+  Tabs,
   Text,
   TextInput,
   Textarea,
@@ -26,6 +27,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { failureMessage } from '@/common/api-client'
+import { ClientNotes } from '@/modules/notes'
 import { useSession } from '@/modules/session'
 import { ConversationTags, TagBadge, tagsQueryOptions } from '@/modules/tags'
 
@@ -440,6 +442,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
   const query = useQuery(threadQueryOptions(id))
   const viewport = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [tab, setTab] = useState<'thread' | 'notes'>('thread')
 
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
@@ -528,32 +531,45 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
           {TELEGRAM_LABEL}
         </Badge>
       </Group>
-      <ConversationTags conversationId={id} tags={thread.conversation.tags} />
+      <Tabs value={tab} onChange={(value) => setTab(value === 'notes' ? 'notes' : 'thread')}>
+        <Tabs.List px="md">
+          <Tabs.Tab value="thread">Переписка</Tabs.Tab>
+          <Tabs.Tab value="notes">Заметки</Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
 
-      <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
-        <Stack gap="sm" py="md">
-          {thread.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
-          ))}
-        </Stack>
-      </ScrollArea>
+      {tab === 'notes' ? (
+        <ClientNotes conversationId={id} />
+      ) : (
+        <>
+          <ConversationTags conversationId={id} tags={thread.conversation.tags} />
 
-      {notice && (
-        <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
-          {notice}
-        </Alert>
+          <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
+            <Stack gap="sm" py="md">
+              {thread.messages.map((message) => (
+                <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
+              ))}
+            </Stack>
+          </ScrollArea>
+
+          {notice && (
+            <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
+              {notice}
+            </Alert>
+          )}
+          <Composer
+            onSend={async (text, file) => {
+              setNotice(null)
+              try {
+                return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
+              } catch {
+                setNotice(failureMessage())
+                return false
+              }
+            }}
+          />
+        </>
       )}
-      <Composer
-        onSend={async (text, file) => {
-          setNotice(null)
-          try {
-            return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
-          } catch {
-            setNotice(failureMessage())
-            return false
-          }
-        }}
-      />
     </>
   )
 }

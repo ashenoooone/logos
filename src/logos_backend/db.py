@@ -52,6 +52,7 @@ TAGS_TABLE = "tags"
 CONVERSATION_TAGS_TABLE = "conversation_tags"
 INBOX_PREFERENCES_TABLE = "inbox_preferences"
 SAVED_FILTERS_TABLE = "saved_filters"
+CLIENT_NOTES_TABLE = "client_notes"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -71,6 +72,7 @@ REQUIRED_TABLES = frozenset(
         SAVED_FILTERS_TABLE,
         MANAGER_OTP_CODES_TABLE,
         MANAGER_OTP_REQUESTS_TABLE,
+        CLIENT_NOTES_TABLE,
     }
 )
 
@@ -309,6 +311,30 @@ saved_filters = Table(
     Column("created_at", Integer, nullable=False),
     UniqueConstraint("manager_id", "name", name="uq_saved_filters_name"),
 )
+
+# Заметки о клиентах (#14): автор — менеджер; видимость team/private.
+client_notes = Table(
+    CLIENT_NOTES_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="SET NULL"), nullable=True),
+    Column("text", String, nullable=False),
+    Column("visibility", String, nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("updated_at", Integer, nullable=False),
+    CheckConstraint("length(trim(text)) > 0", name="ck_client_notes_text_not_blank"),
+    CheckConstraint("visibility IN ('team', 'private')", name="ck_client_notes_visibility"),
+    CheckConstraint("version >= 1", name="ck_client_notes_version"),
+)
+
+Index("ix_client_notes_conversation", client_notes.c.conversation_id)
 
 Index(
     "uq_one_time_links_active",
