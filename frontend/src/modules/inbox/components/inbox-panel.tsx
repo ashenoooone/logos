@@ -1,4 +1,4 @@
-import { TELEGRAM_LABEL } from '@/common/channel-label'
+import { TELEGRAM_LABEL, channelLabel } from '@/common/channel-label'
 import {
   ActionIcon,
   Alert,
@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   CloseButton,
+  Drawer,
   FileButton,
   Flex,
   Group,
@@ -57,6 +58,7 @@ import {
   sendFile,
   sendReply,
   threadQueryOptions,
+  type ClientAppeal,
   type ConversationSummary,
   type Filters,
   type Message,
@@ -67,6 +69,7 @@ import {
   type TransferResult,
   unpinConversation,
 } from '../api/inbox'
+import { ClientPanel } from './client-panel'
 import { InboxToolbar } from './inbox-toolbar'
 import { ThreadComments } from './thread-comments'
 import { TransferModal } from './transfer-modal'
@@ -104,6 +107,10 @@ function formatTime(iso: string) {
     return time
   }
   return `${date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${time}`
+}
+
+function formatDay(iso: string) {
+  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '')
 }
 
 function formatSize(bytes: number | null) {
@@ -169,6 +176,13 @@ export function InboxPanel() {
   const preferences = useQuery(preferencesQueryOptions)
   const allTags = useQuery(tagsQueryOptions)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // #13: открытое прошлое обращение; returnId — диалог, из которого пришли.
+  const [appeal, setAppeal] = useState<{
+    conversationId: number
+    from: string
+    to: string
+    returnId: number
+  } | null>(null)
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [snapshot, setSnapshot] = useState<{ ids: number[]; incoming: number; query: string } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -422,7 +436,10 @@ export function InboxPanel() {
                   key={item.id}
                   item={item}
                   active={item.id === selectedId}
-                  onSelect={() => setSelectedId(item.id)}
+                  onSelect={() => {
+                    setAppeal(null)
+                    setSelectedId(item.id)
+                  }}
                   onTogglePin={() => void togglePin(item)}
                   pinLimitReached={pinLimitReached}
                 />
@@ -442,7 +459,6 @@ export function InboxPanel() {
               <ThreadView
                 key={selectedId}
                 id={selectedId}
-                onClose={() => setSelectedId(null)}
                 pinnedAt={byId.get(selectedId)?.pinned_at ?? null}
                 pinCount={pinned.length}
                 onTogglePin={() => {
@@ -450,6 +466,26 @@ export function InboxPanel() {
                   if (item) {
                     void togglePin(item)
                   }
+                }}
+                appeal={appeal?.conversationId === selectedId ? appeal : null}
+                onOpenAppeal={(item) => {
+                  setAppeal({
+                    conversationId: item.conversation_id,
+                    from: item.started_at,
+                    to: item.ended_at,
+                    returnId: appeal?.returnId ?? selectedId ?? item.conversation_id,
+                  })
+                  setSelectedId(item.conversation_id)
+                }}
+                onBack={() => {
+                  if (appeal) {
+                    setSelectedId(appeal.returnId)
+                    setAppeal(null)
+                  }
+                }}
+                onClose={() => {
+                  setAppeal(null)
+                  setSelectedId(null)
                 }}
               />
             )}
@@ -587,16 +623,22 @@ function ConversationRow({
 
 function ThreadView({
   id,
-  onClose,
   pinnedAt,
   pinCount,
   onTogglePin,
+  appeal,
+  onOpenAppeal,
+  onBack,
+  onClose,
 }: {
   id: number
-  onClose: () => void
   pinnedAt: string | null
   pinCount: number
   onTogglePin: () => void
+  appeal: { from: string; to: string } | null
+  onOpenAppeal: (appeal: ClientAppeal) => void
+  onBack: () => void
+  onClose: () => void
 }) {
   const { subject, setSubject } = useSession()
   const queryClient = useQueryClient()
@@ -607,10 +649,17 @@ function ThreadView({
   const [notice, setNotice] = useState<string | null>(null)
   const [tab, setTab] = useState<'thread' | 'notes' | 'team'>('thread')
   const [resolving, setResolving] = useState(false)
+  const [clientOpen, setClientOpen] = useState(false)
 
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
-  const count = thread?.messages.length ?? 0
+  const messages = (thread?.messages ?? []).filter(
+    (message) =>
+      !appeal ||
+      (Date.parse(message.created_at) >= Date.parse(appeal.from) &&
+        Date.parse(message.created_at) <= Date.parse(appeal.to)),
+  )
+  const count = messages.length
   const pinLimitReached = pinnedAt === null && pinCount >= PIN_LIMIT
   const transfer = thread?.conversation.transfer ?? null
   const currentManagerId = subject?.type === 'manager' ? subject.id : null
@@ -704,14 +753,21 @@ function ThreadView({
     )
   }
 
+  const visibleTransfers = appeal
+    ? thread.transfers.filter(
+        (item) =>
+          Date.parse(item.created_at) >= Date.parse(appeal.from) &&
+          Date.parse(item.created_at) <= Date.parse(appeal.to),
+      )
+    : thread.transfers
   const feed = [
-    ...thread.messages.map((message) => ({
+    ...messages.map((message) => ({
       key: `m${message.id}`,
       at: Date.parse(message.created_at),
       message,
       transfer: null as Transfer | null,
     })),
-    ...thread.transfers.map((item) => ({
+    ...visibleTransfers.map((item) => ({
       key: `t${item.id}`,
       at: Date.parse(item.created_at),
       message: null as Message | null,
@@ -720,156 +776,209 @@ function ThreadView({
   ].sort((a, b) => a.at - b.at || (a.message ? -1 : 1))
 
   return (
-    <>
-      <Group
-        gap="sm"
-        px="md"
-        py="sm"
-        wrap="nowrap"
-        style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
-      >
-        <CloseButton hiddenFrom="sm" aria-label="К списку диалогов" onClick={onClose} />
-        <Avatar radius="xl" color="initials" name={thread.conversation.name}>
-          {initials(thread.conversation.name)}
-        </Avatar>
-        <Text fw={600} truncate>
-          {thread.conversation.name}
-        </Text>
-        <Badge variant="outline" color="gray" size="sm">
-          {TELEGRAM_LABEL}
-        </Badge>
-        {thread.conversation.assignee && (
-          <Text size="xs" c="dimmed" truncate visibleFrom="sm">
-            ответственный: {thread.conversation.assignee.name}
+    <Flex style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+      <Box style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Group
+          gap="sm"
+          px="md"
+          py="sm"
+          wrap="nowrap"
+          style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+        >
+          <CloseButton hiddenFrom="sm" aria-label="К списку диалогов" onClick={onClose} />
+          <Avatar radius="xl" color="initials" name={thread.conversation.name}>
+            {initials(thread.conversation.name)}
+          </Avatar>
+          <Text fw={600} truncate>
+            {thread.conversation.name}
           </Text>
-        )}
-        {transfer && (
-          <Badge size="sm" variant="light" color={TRANSFER_COLORS[transfer.status]}>
-            {TRANSFER_LABELS[transfer.status]}
+          <Badge variant="outline" color="gray" size="sm">
+            {channelLabel(thread.conversation.channel)}
           </Badge>
-        )}
-        <Group gap={6} ml="auto" wrap="nowrap">
-          <Tooltip
-            label={`Закреплено ${PIN_LIMIT} из ${PIN_LIMIT}. Снимите закрепление с одного из диалогов.`}
-            disabled={!pinLimitReached}
-          >
-            <Button
-              size="compact-sm"
-              variant={pinnedAt ? 'light' : 'default'}
-              leftSection={<PinIcon />}
-              onClick={onTogglePin}
-              disabled={pinLimitReached}
-            >
-              {pinnedAt ? 'Открепить' : 'Закрепить'}
-            </Button>
-          </Tooltip>
-          {pendingForMe && (
-            <>
-              <Button
-                size="xs"
-                loading={resolving}
-                onClick={() => void resolve(acceptTransfer)}
-              >
-                Принять
-              </Button>
-              <Button
-                size="xs"
-                variant="default"
-                disabled={resolving}
-                onClick={() => void resolve(returnTransfer)}
-              >
-                Возвратить
-              </Button>
-            </>
+          {thread.conversation.assignee && (
+            <Text size="xs" c="dimmed" truncate visibleFrom="sm">
+              ответственный: {thread.conversation.assignee.name}
+            </Text>
           )}
-          <Button
-            size="xs"
-            variant={pendingForMe ? 'default' : 'light'}
-            onClick={() => setTransferOpen(true)}
-          >
-            Передать
-          </Button>
-        </Group>
-      </Group>
-      <Tabs
-        value={tab}
-        onChange={(value) =>
-          setTab(value === 'notes' ? 'notes' : value === 'team' ? 'team' : 'thread')
-        }
-      >
-        <Tabs.List px="md">
-          <Tabs.Tab value="thread">Переписка</Tabs.Tab>
-          <Tabs.Tab value="notes">Заметки</Tabs.Tab>
-          <Tabs.Tab value="team">Команда</Tabs.Tab>
-        </Tabs.List>
-      </Tabs>
-
-      {/* Оба треда остаются смонтированными: черновики сохраняются при переключении. */}
-      <Box
-        style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
-        display={tab === 'thread' ? 'flex' : 'none'}
-      >
-        <ConversationTags conversationId={id} tags={thread.conversation.tags} />
-
-        <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
-          <Stack gap="sm" py="md">
-            {feed.map((item) =>
-              item.message ? (
-                <MessageBubble
-                  key={item.key}
-                  message={item.message}
-                  onRetry={() => void handleRetry(item.message as Message)}
-                />
-              ) : (
-                <TransferEntry key={item.key} transfer={item.transfer as Transfer} />
-              ),
+          {transfer && (
+            <Badge size="sm" variant="light" color={TRANSFER_COLORS[transfer.status]}>
+              {TRANSFER_LABELS[transfer.status]}
+            </Badge>
+          )}
+          <Group gap={6} ml="auto" wrap="nowrap">
+            {pinCount !== undefined && (
+              <Tooltip
+                label={`Закреплено ${PIN_LIMIT} из ${PIN_LIMIT}. Снимите закрепление с одного из диалогов.`}
+                disabled={!pinLimitReached}
+              >
+                <Button
+                  size="compact-sm"
+                  variant={pinnedAt ? 'light' : 'default'}
+                  leftSection={<PinIcon />}
+                  onClick={onTogglePin}
+                  disabled={pinLimitReached}
+                >
+                  {pinnedAt ? 'Открепить' : 'Закрепить'}
+                </Button>
+              </Tooltip>
             )}
-          </Stack>
-        </ScrollArea>
+            {pendingForMe && (
+              <>
+                <Button
+                  size="xs"
+                  loading={resolving}
+                  onClick={() => void resolve(acceptTransfer)}
+                >
+                  Принять
+                </Button>
+                <Button
+                  size="xs"
+                  variant="default"
+                  disabled={resolving}
+                  onClick={() => void resolve(returnTransfer)}
+                >
+                  Возвратить
+                </Button>
+              </>
+            )}
+            <Button
+              size="xs"
+              variant={pendingForMe ? 'default' : 'light'}
+              onClick={() => setTransferOpen(true)}
+            >
+              Передать
+            </Button>
+            <Button
+              hiddenFrom="lg"
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => setClientOpen(true)}
+            >
+              Клиент
+            </Button>
+          </Group>
+        </Group>
 
-        {notice && (
-          <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
-            {notice}
-          </Alert>
+        {appeal && (
+          <Group
+            px="md"
+            py="xs"
+            gap="sm"
+            justify="space-between"
+            bg="gray.0"
+            style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}
+          >
+            <Text size="sm">Обращение от {formatDay(appeal.from)}</Text>
+            <Anchor component="button" type="button" size="sm" onClick={onBack}>
+              Назад к текущему
+            </Anchor>
+          </Group>
         )}
-        <Composer
-          conversationName={thread.conversation.name}
-          onSend={async (text, file) => {
-            setNotice(null)
-            try {
-              return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
-            } catch {
-              setNotice(failureMessage())
-              return false
-            }
-          }}
-        />
-      </Box>
 
-      {tab === 'notes' && <ClientNotes conversationId={id} />}
+        <Tabs
+          value={tab}
+          onChange={(value) =>
+            setTab(value === 'notes' ? 'notes' : value === 'team' ? 'team' : 'thread')
+          }
+        >
+          <Tabs.List px="md">
+            <Tabs.Tab value="thread">Переписка</Tabs.Tab>
+            <Tabs.Tab value="notes">Заметки</Tabs.Tab>
+            <Tabs.Tab value="team">Команда</Tabs.Tab>
+          </Tabs.List>
+        </Tabs>
+
+        {/* Оба треда остаются смонтированными: черновики сохраняются при переключении. */}
+        <Box
+          style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
+          display={tab === 'thread' ? 'flex' : 'none'}
+        >
+          <ConversationTags conversationId={id} tags={thread.conversation.tags} />
+
+          <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
+            <Stack gap="sm" py="md">
+              {feed.map((item) =>
+                item.message ? (
+                  <MessageBubble
+                    key={item.key}
+                    message={item.message}
+                    onRetry={() => void handleRetry(item.message as Message)}
+                  />
+                ) : (
+                  <TransferEntry key={item.key} transfer={item.transfer as Transfer} />
+                ),
+              )}
+            </Stack>
+          </ScrollArea>
+
+          {notice && (
+            <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
+              {notice}
+            </Alert>
+          )}
+          {!appeal && (
+            <Composer
+              conversationName={thread.conversation.name}
+              onSend={async (text, file) => {
+                setNotice(null)
+                try {
+                  return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
+                } catch {
+                  setNotice(failureMessage())
+                  return false
+                }
+              }}
+            />
+          )}
+        </Box>
+
+        {tab === 'notes' && <ClientNotes conversationId={id} />}
+
+        <Box
+          style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
+          display={tab === 'team' ? 'flex' : 'none'}
+        >
+          <ThreadComments id={id} active={tab === 'team'} />
+        </Box>
+
+        {transferOpen && (
+          <TransferModal
+            conversationId={id}
+            managers={colleagues.data?.kind === 'success' ? colleagues.data.value : []}
+            loading={colleagues.isPending}
+            onClose={() => setTransferOpen(false)}
+            onDone={() => {
+              setTransferOpen(false)
+              refresh()
+            }}
+          />
+        )}
+      </Box>
 
       <Box
-        style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
-        display={tab === 'team' ? 'flex' : 'none'}
+        visibleFrom="lg"
+        w={300}
+        style={{ flexShrink: 0, borderLeft: '1px solid var(--mantine-color-gray-3)' }}
       >
-        <ThreadComments id={id} active={tab === 'team'} />
+        <ClientPanel conversationId={id} onOpen={onOpenAppeal} />
       </Box>
 
-      {transferOpen && (
-        <TransferModal
+      <Drawer
+        opened={clientOpen}
+        onClose={() => setClientOpen(false)}
+        position="right"
+        title="Клиент"
+        size="sm"
+      >
+        <ClientPanel
           conversationId={id}
-          managers={
-            colleagues.data?.kind === 'success' ? colleagues.data.value : []
-          }
-          loading={colleagues.isPending}
-          onClose={() => setTransferOpen(false)}
-          onDone={() => {
-            setTransferOpen(false)
-            refresh()
+          onOpen={(item) => {
+            setClientOpen(false)
+            onOpenAppeal(item)
           }}
         />
-      )}
-    </>
+      </Drawer>
+    </Flex>
   )
 }
 

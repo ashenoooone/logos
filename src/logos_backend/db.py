@@ -255,9 +255,15 @@ conversations = Table(
         ForeignKey("managers.id", ondelete="SET NULL"),
         nullable=True,
     ),
+    # Канал диалога и ключ клиента для общего таймлайна обращений (#13).
+    # Клиент по имени: объединение одного человека между каналами не определено.
+    Column("channel", String, nullable=False, server_default="telegram"),
+    Column("client_key", String, nullable=False, server_default=""),
     Column("created_at", Integer, nullable=False),
     Column("last_message_at", Integer, nullable=False),
 )
+
+Index("ix_conversations_client_key", conversations.c.client_key)
 
 # Передача обращения (#16): текущая запись решает статус диалога —
 # «Ожидает принятия» (pending), «Принято» (accepted) или «Возвращено» (returned).

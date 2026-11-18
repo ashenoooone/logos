@@ -68,5 +68,6 @@ def downgrade() -> None:
         "ix_conversation_transfers_conversation", table_name="conversation_transfers"
     )
     op.drop_table("conversation_transfers")
-    op.drop_column("conversations", "assignee_manager_id")
     op.drop_column("managers", "on_shift")
+    with op.batch_alter_table("conversations") as batch:
+        batch.drop_column("assignee_manager_id")
