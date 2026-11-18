@@ -74,6 +74,7 @@ REQUIRED_TABLES = frozenset(
         MANAGER_OTP_CODES_TABLE,
         MANAGER_OTP_REQUESTS_TABLE,
         REPLY_TEMPLATES_TABLE,
+        PINNED_CONVERSATIONS_TABLE,
     }
 )
 
@@ -327,6 +328,27 @@ saved_filters = Table(
     Column("filters", String, nullable=False),
     Column("created_at", Integer, nullable=False),
     UniqueConstraint("manager_id", "name", name="uq_saved_filters_name"),
+)
+
+# Закреплённые диалоги (#12): свои у каждого менеджера, не больше PIN_LIMIT в inbox.
+pinned_conversations = Table(
+    PINNED_CONVERSATIONS_TABLE,
+    metadata,
+    Column(
+        "manager_id", Integer, ForeignKey("managers.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("pinned_at", Integer, nullable=False),
+)
+
+Index(
+    "ix_pinned_conversations_conversation",
+    pinned_conversations.c.conversation_id,
 )
 
 Index(

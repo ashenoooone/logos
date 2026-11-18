@@ -30,6 +30,7 @@ from logos_backend.db import (
     inbox_preferences,
     managers,
     messages,
+    pinned_conversations,
     saved_filters,
 )
 
@@ -48,10 +49,15 @@ DELIVERED = "delivered"
 FAILED = "failed"
 
 SORTS = ("newest", "oldest", "unread")  # ADR-0007; по умолчанию newest
+PIN_LIMIT = 5  # #12: не больше пяти закреплённых диалогов у менеджера
 
 
 class ConversationNotFoundError(Exception):
     """Диалога нет."""
+
+
+class PinLimitError(Exception):
+    """Достигнут предел закреплённых диалогов."""
 
 
 class NotRetryableError(Exception):
@@ -245,10 +251,21 @@ def _unread_filter() -> Any:
     return and_(messages.c.direction == IN, messages.c.read_at.is_(None))
 
 
-def list_conversations(query: str | None = None) -> dict[str, object]:
-    """Все диалоги; поиск по имени клиента и тексту ограничивает диалоги, не счётчики."""
+def list_conversations(manager_id: int, query: str | None = None) -> dict[str, object]:
+    """Все диалоги; поиск по имени клиента и тексту ограничивает диалоги, не счётчики.
+
+    ``pinned_at`` — время закрепления у текущего менеджера (#12), иначе ``None``.
+    """
     search = (query or "").strip().casefold()
     inner = messages.alias("inner")
+    pinned_at = (
+        select(pinned_conversations.c.pinned_at)
+        .where(
+            pinned_conversations.c.conversation_id == conversations.c.id,
+            pinned_conversations.c.manager_id == manager_id,
+        )
+        .scalar_subquery()
+    )
     last_id = (
         select(func.max(inner.c.id))
         .where(inner.c.conversation_id == conversations.c.id)
@@ -270,6 +287,7 @@ def list_conversations(query: str | None = None) -> dict[str, object]:
             conversations.c.name,
             conversations.c.last_message_at,
             unread.label("unread_count"),
+            pinned_at.label("pinned_at"),
             *[column for column in messages.c if column.name != "conversation_id"],
             managers.c.name.label("manager_name"),
         )
@@ -324,6 +342,7 @@ def list_conversations(query: str | None = None) -> dict[str, object]:
             if row["id"] is not None
             else None,
             "tags": tag_map.get(int(row["conversation_id"]), []),
+            "pinned_at": _iso(int(row["pinned_at"])) if row["pinned_at"] is not None else None,
         }
         for row in rows
     ]
@@ -402,6 +421,57 @@ def mark_read(conversation_id: int) -> None:
                 update(messages)
                 .where(messages.c.conversation_id == conversation_id, _unread_filter())
                 .values(read_at=clock.now_seconds())
+            )
+    finally:
+        engine.dispose()
+
+
+def pin(manager_id: int, conversation_id: int) -> str:
+    """Закрепляет диалог у менеджера (#12); повторный вызов время не меняет."""
+    engine = _create_engine()
+    try:
+        with immediate_transaction(engine) as connection:
+            exists = connection.execute(
+                select(conversations.c.id).where(conversations.c.id == conversation_id)
+            ).first()
+            if exists is None:
+                raise ConversationNotFoundError
+            existing = connection.execute(
+                select(pinned_conversations.c.pinned_at).where(
+                    pinned_conversations.c.manager_id == manager_id,
+                    pinned_conversations.c.conversation_id == conversation_id,
+                )
+            ).scalar()
+            if existing is not None:
+                return _iso(int(existing))
+            pinned = connection.execute(
+                select(func.count())
+                .select_from(pinned_conversations)
+                .where(pinned_conversations.c.manager_id == manager_id)
+            ).scalar_one()
+            if int(pinned) >= PIN_LIMIT:
+                raise PinLimitError
+            at = clock.now_seconds()
+            connection.execute(
+                insert(pinned_conversations).values(
+                    manager_id=manager_id, conversation_id=conversation_id, pinned_at=at
+                )
+            )
+    finally:
+        engine.dispose()
+    return _iso(at)
+
+
+def unpin(manager_id: int, conversation_id: int) -> None:
+    """Снимает закрепление; повторный вызов ничего не меняет."""
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                pinned_conversations.delete().where(
+                    pinned_conversations.c.manager_id == manager_id,
+                    pinned_conversations.c.conversation_id == conversation_id,
+                )
             )
     finally:
         engine.dispose()

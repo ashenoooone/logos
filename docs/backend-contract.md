@@ -2,7 +2,7 @@
 
 Документ описывает реализованное HTTP-поведение сервиса на текущей ветке. Сервис — FastAPI-приложение `logos_backend.app:app`; источник продуктовых решений #10 — ADR-0008.
 
-Реализованы email-OTP для входа менеджеров, парольный вход администратора, приглашения, профиль, каналы, входящие, сортировка, теги и шаблоны ответов. Проверки описывает главный агент; этот документ не утверждает, что они пройдены.
+Реализованы email-OTP для входа менеджеров, парольный вход администратора, приглашения, профиль, каналы, входящие, сортировка, теги, шаблоны ответов и закрепление диалогов (#12). Проверки описывает главный агент; этот документ не утверждает, что они пройдены.
 
 
 ## Общие свойства HTTP
@@ -172,15 +172,20 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 
 | Эндпоинт | Тело | Успех | Ошибки |
 |---|---|---|---|
-| `GET /conversations` | optional `?q=<string>` (подстрока без учёта регистра в имени клиента или тексте сообщений) | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}]}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху | — |
+| `GET /conversations` | optional `?q=<string>` (подстрока без учёта регистра в имени клиента или тексте сообщений) | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}],"pinned_at"}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху; `pinned_at` — время закрепления у текущего менеджера или `null` | — |
 | `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
 | `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
+| `POST /conversations/{id}/pin` | — | `200 {"pinned_at"}`; повторный вызов время не меняет | `404`; `409 {"detail":"Pin limit reached","limit":5}` |
+| `DELETE /conversations/{id}/pin` | — | `200 {"status":"ok"}`; повторный вызов ничего не меняет | — |
 | `POST /conversations/{id}/messages` | `{"text"}` (1–4096 после trim) | `200 {"message"}`, `status` = `delivered`/`failed` | `422 field=text`; `404` |
 | `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
 | `POST /messages/{id}/retry` | — | `200 {"message"}` | `409` — ответ не в статусе `failed` |
 | `GET /messages/{id}/attachment` | — | файл: фото — `image/jpeg` inline, документ — `application/octet-stream` attachment; `nosniff`, `CSP: sandbox` | `404` |
 
 `message`: `{"id","direction":"in"|"out","author":string|null,"kind":"text"|"photo"|"document"|"unsupported","text","file":{"name","size","available"}|null,"status":null|"sending"|"delivered"|"failed","created_at"}`.
+
+Закрепление (#12) — личное у менеджера: не больше 5 диалогов, ни на кого другого не влияет. Удаление диалога снимает закрепление каскадом, поэтому счётчик уменьшается без ошибки.
+
 ## Сортировка и фильтры (#7)
 
 Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
@@ -240,6 +245,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0010` | `manager_otp_codes`, `manager_otp_requests`, `messages.manager_id`; удаляет старые `/start`-сообщения без удаления переписки |
 | `0011` | без схемы: проставляет авторов ответов в демо-диалогах (только при наличии демо-менеджеров) |
 | `0012` | `reply_templates` |
+| `0013` | `pinned_conversations` + индекс `ix_pinned_conversations_conversation` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -252,6 +258,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `tags`: уникальный `name_normalized`; `manager_id` NULL — стандартный тег, иначе автор. `conversation_tags` — связь с CASCADE на диалог и тег.
 - `reply_templates`: общий шаблон ответа; `manager_id` — автор, менять и удалять может только он; CASCADE при удалении менеджера.
 - `inbox_preferences` (`manager_id`, `sort`) и `saved_filters` (`manager_id`, `name` уникально у менеджера, `filters` — JSON).
+- `pinned_conversations` (`manager_id`, `conversation_id`, `pinned_at`): личные закрепления менеджера, не больше 5; CASCADE на менеджера и диалог.
 - `manager_otp_codes`: один хеш кода, срок действия, счётчик попыток и время выдачи на активного менеджера; неверные попытки сохраняются.
 - `manager_otp_requests`: последний разрешённый запрос на нормализованный email для общего 60-секундного ограничения.
 

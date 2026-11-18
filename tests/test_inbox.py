@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import insert
 from support import (
     BASE_URL,
     add_active_manager,
@@ -19,6 +20,7 @@ from support import (
 
 from logos_backend import channels
 from logos_backend.app import app
+from logos_backend.db import _create_engine, conversations
 
 TOKEN = "123456:" + "A" * 35
 
@@ -128,3 +130,53 @@ def test_administrator_has_no_inbox(database: None) -> None:
     assert login_administrator(client).status_code == 200
     assert client.get("/conversations").status_code == 403
     assert TestClient(app, base_url=BASE_URL).get("/conversations").status_code == 401
+
+
+def test_pin_limit_and_cascade(database: None) -> None:
+    """#12: лимит 5 на менеджера, снятие и удаление диалога освобождают место."""
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                insert(conversations),
+                [
+                    {"id": number, "chat_id": number, "name": f"Клиент {number}",
+                     "created_at": number, "last_message_at": number}
+                    for number in range(1, 7)
+                ],
+            )
+    finally:
+        engine.dispose()
+    add_active_manager("pins@example.com", "correct1")
+    client = TestClient(app, base_url=BASE_URL)
+    assert login_manager(client, "pins@example.com", "correct1").status_code == 200
+    headers = csrf_headers(client)
+
+    first = client.post("/conversations/1/pin", headers=headers)
+    assert first.status_code == 200
+    assert first.json()["pinned_at"]
+    for number in range(2, 6):
+        assert client.post(f"/conversations/{number}/pin", headers=headers).status_code == 200
+    over_limit = client.post("/conversations/6/pin", headers=headers)
+    assert over_limit.status_code == 409
+    assert over_limit.json()["limit"] == 5
+
+    pinned = [item for item in client.get("/conversations").json()["conversations"]
+              if item["pinned_at"] is not None]
+    assert len(pinned) == 5
+
+    # Удаление диалога убирает закрепление без ошибки и освобождает место.
+    engine = _create_engine()
+    try:
+        with engine.begin() as connection:
+            connection.execute(conversations.delete().where(conversations.c.id == 1))
+    finally:
+        engine.dispose()
+    assert len([item for item in client.get("/conversations").json()["conversations"]
+                if item["pinned_at"] is not None]) == 4
+    assert client.post("/conversations/6/pin", headers=headers).status_code == 200
+
+    assert client.delete("/conversations/6/pin", headers=headers).status_code == 200
+    listing = client.get("/conversations").json()["conversations"]
+    assert all(item["pinned_at"] is None for item in listing if item["id"] == 6)
+
