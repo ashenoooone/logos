@@ -179,8 +179,16 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
 | `POST /messages/{id}/retry` | — | `200 {"message"}` | `409` — ответ не в статусе `failed` |
 | `GET /messages/{id}/attachment` | — | файл: фото — `image/jpeg` inline, документ — `application/octet-stream` attachment; `nosniff`, `CSP: sandbox` | `404` |
+| `GET /conversations/{id}/comments` | — | `200 {"comments":[{"id","text","author","created_at","mentions":[{"id","name","available"}]}],"colleagues":[{"id","name"}]}`; тред команды в порядке отправки, `colleagues` — активные коллеги для @упоминания (без текущего менеджера) | `404` |
+| `POST /conversations/{id}/comments` | `{"text"}` (1–4096 после trim) | `200 {"comment"}` — внутренний комментарий, в Telegram не отправляется | `422 field=text`; `404` |
 
 `message`: `{"id","direction":"in"|"out","author":string|null,"kind":"text"|"photo"|"document"|"unsupported","text","file":{"name","size","available"}|null,"status":null|"sending"|"delivered"|"failed","created_at"}`.
+
+### Внутренние комментарии (#15)
+
+- Отдельный тред команды: хранится в `conversation_comments`, не смешивается с `messages`, не уходит в канал клиента, не меняет непрочитанность, порядок списка и выгрузку переписки.
+- Упоминание — `@Имя` в тексте; сервер сопоставляет его с менеджерами и сохраняет `[{"id","name"}]` с именем на момент отправки. При чтении `available=false` — коллега удалён, фронтенд показывает «пользователь не найден». Уведомление упомянутому не отправляется.
+- Комментарий изменяет только `conversation_comments`; отправка в Telegram не выполняется.
 ## Сортировка и фильтры (#7)
 
 Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
@@ -225,6 +233,8 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0008` | без схемы: при `LOGOS_DEV_ADMIN=1` и пустой `administrators` создаёт тестового администратора `admin`/`admin`; без переменной ничего не делает. Только для локальной разработки |
 | `0009` | без схемы: при `LOGOS_DEMO_SEED=1` и пустой базе (нет менеджеров и диалогов) — демо-данные из `demo_seed.py`: 3 менеджера `*@demo.logos` / `demo1234`, теги, 7 фейковых диалогов Telegram (непрочитанные, документ, «Не доставлено»), сохранённый фильтр; подключает демо-бота только при заданном `LOGOS_DEMO_BOT_TOKEN` (в коде токена нет; без токена или Bot API — без бота). Ответы в демо-диалоги уходят в «Не доставлено». Не для production |
 | `0010` | `manager_otp_codes`, `manager_otp_requests`, `messages.manager_id`; удаляет старые `/start`-сообщения без удаления переписки |
+| `0011` | без схемы: проставляет авторов ответов демо-диалогов при наличии демо-менеджеров |
+| `0012` | `conversation_comments` + индекс `ix_conversation_comments_conversation` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -236,6 +246,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `messages`: `direction` `in`/`out`, `kind`, текст/подпись, имя/размер файла, `file_path` — имя файла в `attachments/` рядом с SQLite (отдаётся только через API). У входящих `read_at` (общая прочитанность), у исходящих `status`. Частичный уникальный индекс `(conversation_id, telegram_message_id) WHERE direction='in'` отсекает дубли.
 - `tags`: уникальный `name_normalized`; `manager_id` NULL — стандартный тег, иначе автор. `conversation_tags` — связь с CASCADE на диалог и тег.
 - `inbox_preferences` (`manager_id`, `sort`) и `saved_filters` (`manager_id`, `name` уникально у менеджера, `filters` — JSON).
+- `conversation_comments`: комментарий команды в диалоге, автор (`NULL` после удаления менеджера), текст, `mentions` — JSON с id и именем на момент отправки; CASCADE при удалении диалога.
 - `manager_otp_codes`: один хеш кода, срок действия, счётчик попыток и время выдачи на активного менеджера; неверные попытки сохраняются.
 - `manager_otp_requests`: последний разрешённый запрос на нормализованный email для общего 60-секундного ограничения.
 

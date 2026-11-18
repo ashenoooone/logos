@@ -15,6 +15,7 @@ import {
   Loader,
   Paper,
   ScrollArea,
+  SegmentedControl,
   Skeleton,
   Stack,
   Text,
@@ -55,6 +56,7 @@ import {
   type Sort,
 } from '../api/inbox'
 import { InboxToolbar } from './inbox-toolbar'
+import { ThreadComments } from './thread-comments'
 
 // Рамка во весь экран под шапкой (≈49px) и отступами страницы.
 const HEIGHT = 'calc(100dvh - 90px)'
@@ -440,6 +442,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
   const query = useQuery(threadQueryOptions(id))
   const viewport = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [tab, setTab] = useState<'client' | 'team'>('client')
 
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
@@ -527,33 +530,58 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
         <Badge variant="outline" color="gray" size="sm">
           {TELEGRAM_LABEL}
         </Badge>
+        {/* #15: комментарии команды — отдельный тред, клиенту не уходят. */}
+        <Box style={{ marginLeft: 'auto' }}>
+          <SegmentedControl
+            size="xs"
+            value={tab}
+            onChange={(value) => setTab(value === 'team' ? 'team' : 'client')}
+            data={[
+              { value: 'client', label: 'Клиент' },
+              { value: 'team', label: 'Команда' },
+            ]}
+          />
+        </Box>
       </Group>
       <ConversationTags conversationId={id} tags={thread.conversation.tags} />
 
-      <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
-        <Stack gap="sm" py="md">
-          {thread.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
-          ))}
-        </Stack>
-      </ScrollArea>
+      {/* Оба треда остаются смонтированными: черновики сохраняются при переключении. */}
+      <Box
+        style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
+        display={tab === 'client' ? 'flex' : 'none'}
+      >
+        <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
+          <Stack gap="sm" py="md">
+            {thread.messages.map((message) => (
+              <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
+            ))}
+          </Stack>
+        </ScrollArea>
 
-      {notice && (
-        <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
-          {notice}
-        </Alert>
-      )}
-      <Composer
-        onSend={async (text, file) => {
-          setNotice(null)
-          try {
-            return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
-          } catch {
-            setNotice(failureMessage())
-            return false
-          }
-        }}
-      />
+        {notice && (
+          <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
+            {notice}
+          </Alert>
+        )}
+        <Composer
+          onSend={async (text, file) => {
+            setNotice(null)
+            try {
+              return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
+            } catch {
+              setNotice(failureMessage())
+              return false
+            }
+          }}
+        />
+      </Box>
+
+      <Box
+        style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
+        display={tab === 'team' ? 'flex' : 'none'}
+      >
+        <ThreadComments id={id} active={tab === 'team'} />
+      </Box>
     </>
   )
 }

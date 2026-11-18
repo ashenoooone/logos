@@ -52,6 +52,7 @@ TAGS_TABLE = "tags"
 CONVERSATION_TAGS_TABLE = "conversation_tags"
 INBOX_PREFERENCES_TABLE = "inbox_preferences"
 SAVED_FILTERS_TABLE = "saved_filters"
+CONVERSATION_COMMENTS_TABLE = "conversation_comments"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -69,6 +70,7 @@ REQUIRED_TABLES = frozenset(
         CONVERSATION_TAGS_TABLE,
         INBOX_PREFERENCES_TABLE,
         SAVED_FILTERS_TABLE,
+        CONVERSATION_COMMENTS_TABLE,
         MANAGER_OTP_CODES_TABLE,
         MANAGER_OTP_REQUESTS_TABLE,
     }
@@ -308,6 +310,34 @@ saved_filters = Table(
     Column("filters", String, nullable=False),
     Column("created_at", Integer, nullable=False),
     UniqueConstraint("manager_id", "name", name="uq_saved_filters_name"),
+)
+
+# Внутренние комментарии команды (#15). Отдельная от messages таблица: не уходят
+# клиенту, не попадают в счётчики и выгрузку переписки. ``mentions`` — JSON
+# [{"id","name"}] с именем на момент отправки: удалённого коллегу показываем
+# как «пользователь не найден».
+conversation_comments = Table(
+    CONVERSATION_COMMENTS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="SET NULL"), nullable=True),
+    Column("text", String, nullable=False),
+    Column("mentions", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    CheckConstraint(
+        "length(trim(text)) > 0", name="ck_conversation_comments_text_not_blank"
+    ),
+)
+
+Index(
+    "ix_conversation_comments_conversation",
+    conversation_comments.c.conversation_id,
 )
 
 Index(

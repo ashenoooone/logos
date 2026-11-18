@@ -121,6 +121,46 @@ export function attachmentUrl(messageId: number): string {
   return `/messages/${messageId}/attachment`
 }
 
+// #15: внутренние комментарии команды. Отдельный тред, клиенту не уходит.
+export interface CommentMention {
+  id: number
+  name: string
+  available: boolean
+}
+
+export interface InternalComment {
+  id: number
+  text: string
+  author: string | null
+  created_at: string
+  mentions: CommentMention[]
+}
+
+export interface CommentThread {
+  comments: InternalComment[]
+  colleagues: { id: number; name: string }[]
+}
+
+export function commentsQueryOptions(id: number) {
+  return queryOptions({
+    queryKey: ['conversations', id, 'comments'],
+    queryFn: async ({ signal }) => {
+      const response = await apiGet<CommentThread>(`/conversations/${id}/comments`, signal)
+      return toResult(response.status, response.data)
+    },
+    refetchInterval: POLL_MS,
+    retry: false,
+  })
+}
+
+export async function addComment(id: number, text: string): Promise<Result<InternalComment>> {
+  const response = await apiPost<{ comment?: InternalComment }>(
+    `/conversations/${id}/comments`,
+    { text },
+  )
+  return toResult(response.status, response.data?.comment)
+}
+
 // #7: сортировка и фильтры. Значения внутри фильтра — ИЛИ, разные фильтры — И (ADR-0007).
 export type Sort = 'newest' | 'oldest' | 'unread'
 
