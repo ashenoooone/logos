@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import Connection
@@ -220,21 +218,23 @@ def rename(tag_id: int, name: str) -> None:
         raise TagNotFoundError
 
 
-def remove(tag_id: int, manager_id: int | None) -> None:
-    """Удаляет тег и снимает его со всех диалогов.
+def remove(tag_id: int, manager_id: int | None) -> str:
+    """Удаляет тег и снимает его со всех диалогов; возвращает имя для журнала.
 
     ``manager_id`` None — администратор, удаляет любой тег; менеджер — только свой.
     """
     engine = _create_engine()
     try:
         with engine.begin() as connection:
-            author: Any = connection.execute(
-                select(tags.c.manager_id).where(tags.c.id == tag_id)
+            tag = connection.execute(
+                select(tags.c.manager_id, tags.c.name).where(tags.c.id == tag_id)
             ).first()
-            if author is None:
+            if tag is None:
                 raise TagNotFoundError
-            if manager_id is not None and author[0] != manager_id:
+            if manager_id is not None and tag[0] != manager_id:
                 raise TagForbiddenError
             connection.execute(delete(tags).where(tags.c.id == tag_id))
+            name = str(tag[1])
     finally:
         engine.dispose()
+    return name

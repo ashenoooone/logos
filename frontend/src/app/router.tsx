@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router'
 
 import { AdminLoginPage } from '@/pages/admin-login/admin-login-page'
+import { AuditLogPage } from '@/pages/audit-log/audit-log-page'
 import { ChannelsPage } from '@/pages/channels/channels-page'
 import { EmployeesPage } from '@/pages/employees/employees-page'
 import { EmailConfirmationPage } from '@/pages/email-confirmation/email-confirmation-page'
@@ -87,6 +88,11 @@ const routeTree = rootRoute.addChildren([
         getParentRoute: () => administratorRoute,
         path: '/reports',
         component: ReportsPage,
+      }),
+      createRoute({
+        getParentRoute: () => administratorRoute,
+        path: '/audit-log',
+        component: AuditLogPage,
       }),
     ]),
     managerRoute.addChildren([

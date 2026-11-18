@@ -116,6 +116,29 @@ export async function apiUpload<T = unknown>(path: string, file: Blob): Promise<
   return parse<T>(response)
 }
 
+/** POST, который возвращает файл: ошибки отдаются как JSON, тело успеха — blob. */
+export async function apiDownload(
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; blob: Blob | null }> {
+  const token = await csrfToken()
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      accept: 'text/csv',
+      'content-type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    body: JSON.stringify(body ?? {}),
+    credentials: 'same-origin',
+    cache: 'no-store',
+  })
+  if (response.status !== 200) {
+    return { status: response.status, blob: null }
+  }
+  return { status: 200, blob: await response.blob() }
+}
+
 /** Текст для непредусмотренного исхода: `status` не задан — нет связи с сервисом. */
 export function failureMessage(status?: number): string {
   return status === undefined

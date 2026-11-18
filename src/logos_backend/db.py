@@ -57,12 +57,14 @@ REPLY_TEMPLATES_TABLE = "reply_templates"
 CLIENT_NOTES_TABLE = "client_notes"
 CONVERSATION_COMMENTS_TABLE = "conversation_comments"
 CONVERSATION_TRANSFERS_TABLE = "conversation_transfers"
+AUDIT_EVENTS_TABLE = "audit_events"
 
 REQUIRED_TABLES = frozenset(
     {
         CONVERSATIONS_TABLE,
         MESSAGES_TABLE,
         CONVERSATION_TRANSFERS_TABLE,
+        AUDIT_EVENTS_TABLE,
         ADMINISTRATORS_TABLE,
         MANAGERS_TABLE,
         SESSIONS_TABLE,
@@ -456,6 +458,26 @@ Index(
     "ix_conversation_comments_conversation",
     conversation_comments.c.conversation_id,
 )
+
+# Журнал действий (#18): снимок имени и IP на момент события. Внешних ключей
+# нет — запись переживает переименование и удаление сотрудника.
+audit_events = Table(
+    AUDIT_EVENTS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("occurred_at", Integer, nullable=False),
+    Column("actor_kind", String, nullable=False),
+    Column("actor_id", Integer, nullable=False),
+    Column("actor_name", String, nullable=False),
+    Column("action", String, nullable=False),
+    Column("description", String, nullable=False),
+    Column("ip", String, nullable=False),
+    CheckConstraint(
+        "actor_kind IN ('administrator', 'manager')", name="ck_audit_events_actor_kind"
+    ),
+)
+
+Index("ix_audit_events_occurred", audit_events.c.occurred_at)
 
 Index(
     "uq_one_time_links_active",

@@ -299,6 +299,20 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `422 {"detail","field":"from"}` — начало позже конца или некорректная дата; `404` — неизвестный `manager_id`.
 - CSV собирает фронтенд из этого же ответа: UTF-8 с BOM, разделитель `;`, в шапке период, менеджер, канал и часовой пояс, затем строки таблицы и «Итого». При `empty=true` выгрузка недоступна.
 - Схема БД не меняется: отчёт считается по `conversations`, `messages` и `managers`.
+## Журнал действий (#18)
+
+Только администратор (`401` без сессии, `403` менеджеру). Записи только добавляются: API не меняет и не удаляет их. Имя сотрудника и IP — снимок на момент события, поэтому переименование или смена адреса не переписывают историю. Срок хранения — 12 месяцев, просроченные записи удаляются при чтении журнала.
+
+Пишутся события: вход (`login`) администратора и менеджера, выход (`logout`), удаление тега (`tag_deleted`), выгрузка CSV (`export`). Изменения прав и восстановление в продукте пока отсутствуют, поэтому таких событий нет.
+
+| Эндпоинт | Тело | Успех | Ошибки |
+|---|---|---|---|
+| `GET /admin/audit-log` | query: `actor` (`administrator:<id>`/`manager:<id>`), `action` (`login`/`logout`/`tag_deleted`/`export`), `from`, `to` (`YYYY-MM-DD`, UTC) | `200 {"events":[event],"actors":[{"kind","id","name"}],"total":N,"truncated":bool}`, новые сверху, не более 500 строк | `422 {"detail","field"}` — неверный фильтр |
+| `POST /admin/audit-log/export` | JSON `{"actor","action","from","to"}`, те же значения | `200 text/csv` (UTF-8 BOM, запятая, `Content-Disposition: attachment`), до 100 000 строк | `422` — неверный фильтр |
+
+`event`: `{"id","occurred_at":"<ISO-8601 UTC>","actor":{"kind","id","name"},"action","description","ip"}`.
+
+Без единого фильтра (сотрудник, тип, период) сервер отдаёт события за последние 7 дней. `from` — начало дня UTC включительно, `to` — конец дня UTC включительно. `actors` — все сотрудники, встречающиеся в журнале (подпись — последнее имя в записях). IP берётся из проверенного `X-Real-IP` (его перезаписывает nginx), иначе — адрес соединения. Выгрузка пишется в журнал отдельным событием `export`.
 
 ## Схема данных
 
@@ -323,6 +337,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0015` | `conversation_comments` + индекс `ix_conversation_comments_conversation` |
 | `0016` | `conversation_transfers` + индекс `ix_conversation_transfers_conversation`; `managers.on_shift` (по умолчанию `1`), `conversations.assignee_manager_id`; демо-менеджер `igor@demo.logos` переводится вне смены |
 | `0017` | `conversations.channel`, `conversations.client_key` + индекс `ix_conversations_client_key`; заполняет канал `telegram` и ключ по имени |
+| `0018` | `audit_events` + индекс `ix_audit_events_occurred` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -341,6 +356,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `manager_otp_requests`: последний разрешённый запрос на нормализованный email для общего 60-секундного ограничения.
 - `client_notes`: заметка диалога, автор-менеджер (`NULL` после удаления автора), текст, видимость `team`/`private`, `version` для защиты от устаревшей правки; CASCADE при удалении диалога.
 - `conversation_transfers`: журнал передач (`from` — прежний владелец, `to` — получатель, комментарий, `status` ∈ `pending`/`accepted`/`returned`, `created_at`, `resolved_at`). `conversations.assignee_manager_id` — текущий ответственный (`NULL` — не назначен); `managers.on_shift` — участие в смене.
+- `audit_events`: время события, вид и id сотрудника, снимок имени, тип действия, описание, IP. Внешних ключей нет; строки не обновляются и не удаляются через API.
 
 В БД не хранятся открытые токены сессий и одноразовых ссылок — только SHA-256-дайджесты. Исключение — токен Telegram-бота: он нужен для вызовов Bot API.
 

@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import insert
 from sqlalchemy import create_engine, insert
 from support import (
     BASE_URL,
@@ -21,8 +20,7 @@ from support import (
 
 from logos_backend import channels, clock
 from logos_backend.app import app
-from logos_backend.db import _create_engine, conversations
-from logos_backend.db import conversations, database_url, messages
+from logos_backend.db import _create_engine, conversations, database_url, messages
 
 TOKEN = "123456:" + "A" * 35
 DAY = 24 * 60 * 60
