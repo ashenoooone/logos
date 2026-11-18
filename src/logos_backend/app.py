@@ -21,6 +21,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from logos_backend import channels, inbox
 from logos_backend.db import is_database_ready
 from logos_backend.web_account import router as account_router
+from logos_backend.web_audit import router as audit_router
 from logos_backend.web_auth import router as auth_router
 from logos_backend.web_channels import router as channels_router
 from logos_backend.web_inbox import router as inbox_router
@@ -79,6 +80,7 @@ app.include_router(account_router)
 app.include_router(inbox_router)
 app.include_router(tags_router)
 app.include_router(channels_router)
+app.include_router(audit_router)
 
 
 @app.exception_handler(RequestValidationError)

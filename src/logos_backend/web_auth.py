@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import secrets
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from logos_backend import auth, mail
+from logos_backend import audit, auth, mail
 from logos_backend.config import get_allowed_origins
 from logos_backend.security import InvalidEmailError, new_token, validate_email_address
 
@@ -75,6 +76,21 @@ def _origin_is_allowed(request: Request) -> bool:
     allowed.update(_canonical_origin(origin) for origin in get_allowed_origins())
     allowed.discard(None)
     return supplied_origin in allowed
+
+
+def request_ip(request: Request) -> str:
+    """IP клиента для журнала действий (#18); при неизвестном — ``unknown``.
+
+    ``X-Real-IP`` выставляет только reverse proxy (nginx перезаписывает его
+    адресом клиента). Значение проверяется как IP, чтобы не хранить мусор.
+    """
+    forwarded = request.headers.get("x-real-ip", "").strip()
+    if forwarded:
+        try:
+            return str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            pass
+    return request.client.host if request.client else "unknown"
 
 
 def require_csrf(request: Request) -> None:
@@ -239,6 +255,7 @@ def administrator_login(
         return _locked(exc.retry_after_seconds)
     except auth.InvalidCredentialsError as exc:
         return _invalid_credentials(exc.attempts_remaining)
+    audit.record(session.subject, audit.LOGIN, "Вход в систему", request_ip(request))
     return _authenticated(request, session, payload.remember)
 
 
@@ -305,6 +322,7 @@ def verify_manager_otp(payload: ManagerOtpVerify, request: Request) -> JSONRespo
             status_code=401, content={"detail": "Invalid or expired sign-in code"},
             headers={"Cache-Control": "no-store"},
         )
+    audit.record(session.subject, audit.LOGIN, "Вход в систему", request_ip(request))
     return _authenticated(request, session, payload.remember)
 
 
@@ -322,7 +340,10 @@ def current_subject(
 def logout(request: Request) -> Response:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token:
+        subject = auth.session_subject(token)
         auth.revoke_session(token)
+        if subject is not None:
+            audit.record(subject, audit.LOGOUT, "Выход из системы", request_ip(request))
     response = Response(status_code=204)
     _clear_session_cookie(response, request)
     response.headers["Cache-Control"] = "no-store"

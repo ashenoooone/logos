@@ -52,6 +52,7 @@ TAGS_TABLE = "tags"
 CONVERSATION_TAGS_TABLE = "conversation_tags"
 INBOX_PREFERENCES_TABLE = "inbox_preferences"
 SAVED_FILTERS_TABLE = "saved_filters"
+AUDIT_EVENTS_TABLE = "audit_events"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -71,6 +72,7 @@ REQUIRED_TABLES = frozenset(
         SAVED_FILTERS_TABLE,
         MANAGER_OTP_CODES_TABLE,
         MANAGER_OTP_REQUESTS_TABLE,
+        AUDIT_EVENTS_TABLE,
     }
 )
 
@@ -309,6 +311,26 @@ saved_filters = Table(
     Column("created_at", Integer, nullable=False),
     UniqueConstraint("manager_id", "name", name="uq_saved_filters_name"),
 )
+
+# Журнал действий (#18): снимок имени и IP на момент события. Внешних ключей
+# нет — запись переживает переименование и удаление сотрудника.
+audit_events = Table(
+    AUDIT_EVENTS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("occurred_at", Integer, nullable=False),
+    Column("actor_kind", String, nullable=False),
+    Column("actor_id", Integer, nullable=False),
+    Column("actor_name", String, nullable=False),
+    Column("action", String, nullable=False),
+    Column("description", String, nullable=False),
+    Column("ip", String, nullable=False),
+    CheckConstraint(
+        "actor_kind IN ('administrator', 'manager')", name="ck_audit_events_actor_kind"
+    ),
+)
+
+Index("ix_audit_events_occurred", audit_events.c.occurred_at)
 
 Index(
     "uq_one_time_links_active",
