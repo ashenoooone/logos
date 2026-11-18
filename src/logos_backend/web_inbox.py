@@ -99,6 +99,14 @@ def get_conversation(conversation_id: int, subject: Manager) -> JSONResponse:
         return _not_found()
 
 
+@router.get("/conversations/{conversation_id}/client-history")
+def get_client_history(conversation_id: int, subject: Manager) -> JSONResponse:
+    try:
+        return _json(inbox.client_history(conversation_id))
+    except inbox.ConversationNotFoundError:
+        return _not_found()
+
+
 @router.post("/conversations/{conversation_id}/read", dependencies=[Depends(require_csrf)])
 def mark_read(conversation_id: int, subject: Manager) -> JSONResponse:
     try:

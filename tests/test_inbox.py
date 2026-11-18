@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, insert
 from support import (
     BASE_URL,
     add_active_manager,
@@ -17,10 +18,12 @@ from support import (
     migrate,
 )
 
-from logos_backend import channels
+from logos_backend import channels, clock
 from logos_backend.app import app
+from logos_backend.db import conversations, database_url, messages
 
 TOKEN = "123456:" + "A" * 35
+DAY = 24 * 60 * 60
 
 
 @pytest.fixture()
@@ -128,3 +131,67 @@ def test_administrator_has_no_inbox(database: None) -> None:
     assert login_administrator(client).status_code == 200
     assert client.get("/conversations").status_code == 403
     assert TestClient(app, base_url=BASE_URL).get("/conversations").status_code == 401
+
+
+def test_client_history_merges_channels_and_excludes_active(
+    database: None,
+) -> None:
+    """#13: прошлые обращения одного клиента — общий таймлайн по каналам."""
+    now = clock.now_seconds()
+    engine = create_engine(database_url())
+    try:
+        with engine.begin() as connection:
+            current = connection.execute(
+                insert(conversations)
+                .values(
+                    chat_id=1,
+                    name="Иван",
+                    channel="telegram",
+                    client_key="иван",
+                    created_at=now - 10 * DAY,
+                    last_message_at=now,
+                )
+                .returning(conversations.c.id)
+            ).scalar_one()
+            other = connection.execute(
+                insert(conversations)
+                .values(
+                    chat_id=2,
+                    name="Иван",
+                    channel="email",
+                    client_key="иван",
+                    created_at=now - 3 * DAY,
+                    last_message_at=now - 3 * DAY,
+                )
+                .returning(conversations.c.id)
+            ).scalar_one()
+            rows = [
+                (current, "in", "Первый вопрос", now - 10 * DAY),
+                (current, "out", "Ответ", now - 10 * DAY + 60),
+                (other, "in", "Второй вопрос", now - 3 * DAY),
+                (current, "in", "Текущий вопрос", now),
+            ]
+            for conversation_id, direction, text, at in rows:
+                connection.execute(
+                    insert(messages).values(
+                        conversation_id=conversation_id,
+                        direction=direction,
+                        kind="text",
+                        text=text,
+                        created_at=at,
+                    )
+                )
+    finally:
+        engine.dispose()
+
+    add_active_manager("history@example.com", "correct1")
+    client = TestClient(app, base_url=BASE_URL)
+    assert login_manager(client, "history@example.com", "correct1").status_code == 200
+
+    history = client.get(f"/conversations/{current}/client-history").json()
+    assert history["client"]["name"] == "Иван"
+    assert [(item["topic"], item["channel"]) for item in history["appeals"]] == [
+        ("Второй вопрос", "email"),
+        ("Первый вопрос", "telegram"),
+    ]
+    assert {item["status"] for item in history["appeals"]} == {"closed"}

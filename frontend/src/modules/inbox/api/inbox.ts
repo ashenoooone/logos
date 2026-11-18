@@ -46,8 +46,24 @@ export interface ConversationList {
 }
 
 export interface Thread {
-  conversation: { id: number; provider: 'telegram'; name: string; tags: TagRef[] }
+  conversation: { id: number; provider: 'telegram'; channel: string; name: string; tags: TagRef[] }
   messages: Message[]
+}
+
+// #13: обращение — всплеск переписки клиента; история общая по всем каналам.
+export interface ClientAppeal {
+  id: string
+  conversation_id: number
+  channel: string
+  topic: string
+  status: 'closed'
+  started_at: string
+  ended_at: string
+}
+
+export interface ClientHistory {
+  client: { name: string }
+  appeals: ClientAppeal[]
 }
 
 export type Result<T> =
@@ -91,6 +107,17 @@ export function threadQueryOptions(id: number) {
       return toResult(response.status, response.data)
     },
     refetchInterval: POLL_MS,
+    retry: false,
+  })
+}
+
+export function clientHistoryQueryOptions(id: number) {
+  return queryOptions({
+    queryKey: ['conversations', id, 'client-history'],
+    queryFn: async ({ signal }) => {
+      const response = await apiGet<ClientHistory>(`/conversations/${id}/client-history`, signal)
+      return toResult(response.status, response.data)
+    },
     retry: false,
   })
 }

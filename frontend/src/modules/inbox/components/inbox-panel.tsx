@@ -1,4 +1,4 @@
-import { TELEGRAM_LABEL } from '@/common/channel-label'
+import { TELEGRAM_LABEL, channelLabel } from '@/common/channel-label'
 import {
   ActionIcon,
   Alert,
@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   CloseButton,
+  Drawer,
   FileButton,
   Flex,
   Group,
@@ -47,6 +48,7 @@ import {
   sendFile,
   sendReply,
   threadQueryOptions,
+  type ClientAppeal,
   type ConversationSummary,
   type Filters,
   type Message,
@@ -54,6 +56,7 @@ import {
   type Result,
   type Sort,
 } from '../api/inbox'
+import { ClientPanel } from './client-panel'
 import { InboxToolbar } from './inbox-toolbar'
 
 // Рамка во весь экран под шапкой (≈49px) и отступами страницы.
@@ -89,6 +92,10 @@ function formatTime(iso: string) {
     return time
   }
   return `${date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${time}`
+}
+
+function formatDay(iso: string) {
+  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }).replace('.', '')
 }
 
 function formatSize(bytes: number | null) {
@@ -128,6 +135,13 @@ export function InboxPanel() {
   const preferences = useQuery(preferencesQueryOptions)
   const allTags = useQuery(tagsQueryOptions)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // #13: открытое прошлое обращение; returnId — диалог, из которого пришли.
+  const [appeal, setAppeal] = useState<{
+    conversationId: number
+    from: string
+    to: string
+    returnId: number
+  } | null>(null)
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [snapshot, setSnapshot] = useState<{ ids: number[]; incoming: number; query: string } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -322,7 +336,10 @@ export function InboxPanel() {
                   key={item.id}
                   item={item}
                   active={item.id === selectedId}
-                  onSelect={() => setSelectedId(item.id)}
+                  onSelect={() => {
+                    setAppeal(null)
+                    setSelectedId(item.id)
+                  }}
                 />
               ))}
             </ScrollArea>
@@ -337,7 +354,30 @@ export function InboxPanel() {
                 Выберите диалог
               </Text>
             ) : (
-              <ThreadView key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} />
+              <ThreadView
+                key={selectedId}
+                id={selectedId}
+                appeal={appeal?.conversationId === selectedId ? appeal : null}
+                onOpenAppeal={(item) => {
+                  setAppeal({
+                    conversationId: item.conversation_id,
+                    from: item.started_at,
+                    to: item.ended_at,
+                    returnId: appeal?.returnId ?? selectedId ?? item.conversation_id,
+                  })
+                  setSelectedId(item.conversation_id)
+                }}
+                onBack={() => {
+                  if (appeal) {
+                    setSelectedId(appeal.returnId)
+                    setAppeal(null)
+                  }
+                }}
+                onClose={() => {
+                  setAppeal(null)
+                  setSelectedId(null)
+                }}
+              />
             )}
           </Box>
         </Paper>
@@ -434,16 +474,35 @@ function ConversationRow({
   )
 }
 
-function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
+function ThreadView({
+  id,
+  appeal,
+  onOpenAppeal,
+  onBack,
+  onClose,
+}: {
+  id: number
+  appeal: { from: string; to: string } | null
+  onOpenAppeal: (appeal: ClientAppeal) => void
+  onBack: () => void
+  onClose: () => void
+}) {
   const { setSubject } = useSession()
   const queryClient = useQueryClient()
   const query = useQuery(threadQueryOptions(id))
   const viewport = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [clientOpen, setClientOpen] = useState(false)
 
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
-  const count = thread?.messages.length ?? 0
+  const messages = (thread?.messages ?? []).filter(
+    (message) =>
+      !appeal ||
+      (Date.parse(message.created_at) >= Date.parse(appeal.from) &&
+        Date.parse(message.created_at) <= Date.parse(appeal.to)),
+  )
+  const count = messages.length
 
   useEffect(() => {
     if (data?.kind === 'unauthorized') {
@@ -509,52 +568,97 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
   }
 
   return (
-    <>
-      <Group
-        gap="sm"
-        px="md"
-        py="sm"
-        wrap="nowrap"
-        style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+    <Flex style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+      <Box style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Group
+          gap="sm"
+          px="md"
+          py="sm"
+          wrap="nowrap"
+          style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+        >
+          <CloseButton hiddenFrom="sm" aria-label="К списку диалогов" onClick={onClose} />
+          <Avatar radius="xl" color="initials" name={thread.conversation.name}>
+            {initials(thread.conversation.name)}
+          </Avatar>
+          <Text fw={600} truncate>
+            {thread.conversation.name}
+          </Text>
+          <Badge variant="outline" color="gray" size="sm">
+            {channelLabel(thread.conversation.channel)}
+          </Badge>
+          <Button
+            hiddenFrom="lg"
+            size="compact-xs"
+            variant="subtle"
+            ml="auto"
+            onClick={() => setClientOpen(true)}
+          >
+            Клиент
+          </Button>
+        </Group>
+        {appeal && (
+          <Group
+            px="md"
+            py="xs"
+            gap="sm"
+            justify="space-between"
+            bg="gray.0"
+            style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}
+          >
+            <Text size="sm">Обращение от {formatDay(appeal.from)}</Text>
+            <Anchor component="button" type="button" size="sm" onClick={onBack}>
+              Назад к текущему
+            </Anchor>
+          </Group>
+        )}
+        <ConversationTags conversationId={id} tags={thread.conversation.tags} />
+
+        <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
+          <Stack gap="sm" py="md">
+            {messages.map((message) => (
+              <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
+            ))}
+          </Stack>
+        </ScrollArea>
+
+        {notice && (
+          <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
+            {notice}
+          </Alert>
+        )}
+        {!appeal && (
+          <Composer
+            onSend={async (text, file) => {
+              setNotice(null)
+              try {
+                return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
+              } catch {
+                setNotice(failureMessage())
+                return false
+              }
+            }}
+          />
+        )}
+      </Box>
+
+      <Box
+        visibleFrom="lg"
+        w={300}
+        style={{ flexShrink: 0, borderLeft: '1px solid var(--mantine-color-gray-3)' }}
       >
-        <CloseButton hiddenFrom="sm" aria-label="К списку диалогов" onClick={onClose} />
-        <Avatar radius="xl" color="initials" name={thread.conversation.name}>
-          {initials(thread.conversation.name)}
-        </Avatar>
-        <Text fw={600} truncate>
-          {thread.conversation.name}
-        </Text>
-        <Badge variant="outline" color="gray" size="sm">
-          {TELEGRAM_LABEL}
-        </Badge>
-      </Group>
-      <ConversationTags conversationId={id} tags={thread.conversation.tags} />
-
-      <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
-        <Stack gap="sm" py="md">
-          {thread.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
-          ))}
-        </Stack>
-      </ScrollArea>
-
-      {notice && (
-        <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
-          {notice}
-        </Alert>
-      )}
-      <Composer
-        onSend={async (text, file) => {
-          setNotice(null)
-          try {
-            return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
-          } catch {
-            setNotice(failureMessage())
-            return false
-          }
-        }}
-      />
-    </>
+        <ClientPanel conversationId={id} onOpen={onOpenAppeal} />
+      </Box>
+      <Drawer opened={clientOpen} onClose={() => setClientOpen(false)} position="right" title="Клиент" size="sm">
+        <ClientPanel
+          conversationId={id}
+          onOpen={(item) => {
+            setClientOpen(false)
+            onOpenAppeal(item)
+          }}
+        />
+      </Drawer>
+    </Flex>
   )
 }
 

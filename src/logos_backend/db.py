@@ -238,9 +238,15 @@ conversations = Table(
     Column("id", Integer, primary_key=True),
     Column("chat_id", Integer, nullable=False, unique=True),
     Column("name", String, nullable=False),
+    # Канал диалога и ключ клиента для общего таймлайна обращений (#13).
+    # Клиент по имени: объединение одного человека между каналами не определено.
+    Column("channel", String, nullable=False, server_default="telegram"),
+    Column("client_key", String, nullable=False, server_default=""),
     Column("created_at", Integer, nullable=False),
     Column("last_message_at", Integer, nullable=False),
 )
+
+Index("ix_conversations_client_key", conversations.c.client_key)
 
 # Входящие (direction='in') прочитаны, когда read_at задан; у исходящих — status.
 messages = Table(

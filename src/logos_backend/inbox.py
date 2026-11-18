@@ -46,8 +46,15 @@ OUT = "out"
 SENDING = "sending"
 DELIVERED = "delivered"
 FAILED = "failed"
+DEFAULT_CHANNEL = "telegram"
 
 SORTS = ("newest", "oldest", "unread")  # ADR-0007; по умолчанию newest
+
+# #13: обращение = всплеск переписки клиента; пауза больше суток начинает новое.
+APPEAL_GAP_SECONDS = 24 * 60 * 60
+TOPIC_MAX_LENGTH = 80
+CLOSED = "closed"
+
 
 
 class ConversationNotFoundError(Exception):
@@ -81,6 +88,11 @@ def _client_name(chat: dict[str, Any]) -> str:
     if chat.get("username"):
         return f"@{chat['username']}"
     return f"Клиент {chat.get('id')}"
+
+
+def client_key(name: str) -> str:
+    """Ключ клиента для общего таймлайна: имя без учёта регистра (#13)."""
+    return name.strip().casefold()
 
 
 def _parse(message: dict[str, Any]) -> tuple[str, str | None, str | None, int | None]:
@@ -127,12 +139,20 @@ def _touch_conversation(
     update_last_message: bool = True,
 ) -> int:
     """Создаёт диалог, обновляя его время только для реальных сообщений."""
-    values: dict[str, Any] = {"chat_id": chat_id, "name": name or "", "created_at": at}
+    key = client_key(name or "")
+    values: dict[str, Any] = {
+        "chat_id": chat_id,
+        "name": name or "",
+        "channel": DEFAULT_CHANNEL,
+        "client_key": key,
+        "created_at": at,
+    }
     changes: dict[str, Any] = {}
     if update_last_message:
         changes["last_message_at"] = func.max(conversations.c.last_message_at, at)
     if name:
         changes["name"] = name
+        changes["client_key"] = key
     statement = insert(conversations).values(**values, last_message_at=at)
     if changes:
         statement = statement.on_conflict_do_update(
@@ -369,6 +389,7 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
         "conversation": {
             "id": conversation["id"],
             "provider": "telegram",
+            "channel": conversation["channel"],
             "name": conversation["name"],
             "tags": conversation_tags,
         },
@@ -384,6 +405,92 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
                 }
             )
             for row in rows
+        ],
+    }
+
+
+def _appeal_topic(text: object, file_name: object) -> str | None:
+    topic = " ".join(str(text or file_name or "").split())
+    if not topic:
+        return None
+    return topic if len(topic) <= TOPIC_MAX_LENGTH else topic[: TOPIC_MAX_LENGTH - 1].rstrip() + "…"
+
+
+def client_history(conversation_id: int) -> dict[str, object]:
+    """Прошлые обращения клиента общим таймлайном по всем каналам (#13).
+
+    Обращение — всплеск переписки: пауза больше ``APPEAL_GAP_SECONDS`` начинает
+    новое. Текущее (последнее, ещё не закрытое паузой) обращение в историю не
+    попадает. Тема — первое входящее сообщение обращения, статус прошлого —
+    ``closed``.
+    """
+    engine = _create_engine()
+    try:
+        with engine.connect() as connection:
+            conversation = (
+                connection.execute(
+                    select(conversations.c.name, conversations.c.client_key).where(
+                        conversations.c.id == conversation_id
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if conversation is None:
+                raise ConversationNotFoundError
+            rows = (
+                connection.execute(
+                    select(
+                        messages.c.direction,
+                        messages.c.text,
+                        messages.c.file_name,
+                        messages.c.created_at,
+                        conversations.c.id.label("conversation_id"),
+                        conversations.c.channel,
+                    )
+                    .select_from(messages.join(conversations))
+                    .where(conversations.c.client_key == conversation["client_key"])
+                    .order_by(messages.c.created_at, messages.c.id)
+                )
+                .mappings()
+                .all()
+            )
+    finally:
+        engine.dispose()
+
+    appeals: list[dict[str, Any]] = []
+    for row in rows:
+        at = int(row["created_at"])
+        if not appeals or at - int(appeals[-1]["ended_at"]) > APPEAL_GAP_SECONDS:
+            appeals.append(
+                {
+                    "conversation_id": int(row["conversation_id"]),
+                    "channel": row["channel"],
+                    "started_at": at,
+                    "ended_at": at,
+                    "topic": None,
+                }
+            )
+        appeal = appeals[-1]
+        appeal["ended_at"] = at
+        if appeal["topic"] is None and row["direction"] == IN:
+            appeal["topic"] = _appeal_topic(row["text"], row["file_name"])
+
+    now = clock.now_seconds()
+    past = [appeal for appeal in appeals if now - int(appeal["ended_at"]) > APPEAL_GAP_SECONDS]
+    return {
+        "client": {"name": conversation["name"]},
+        "appeals": [
+            {
+                "id": f"{appeal['conversation_id']}:{appeal['started_at']}",
+                "conversation_id": appeal["conversation_id"],
+                "channel": appeal["channel"],
+                "topic": appeal["topic"] or "Без темы",
+                "status": CLOSED,
+                "started_at": _iso(int(appeal["started_at"])),
+                "ended_at": _iso(int(appeal["ended_at"])),
+            }
+            for appeal in reversed(past)
         ],
     }
 

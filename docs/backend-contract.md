@@ -173,7 +173,8 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | Эндпоинт | Тело | Успех | Ошибки |
 |---|---|---|---|
 | `GET /conversations` | optional `?q=<string>` (подстрока без учёта регистра в имени клиента или тексте сообщений) | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}]}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху | — |
-| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
+| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","channel","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
+| `GET /conversations/{id}/client-history` | — | `200 {"client":{"name"},"appeals":[{"id","conversation_id","channel","topic","status":"closed","started_at","ended_at"}]}`; прошлые обращения клиента, новые сверху (см. ниже) | `404` |
 | `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
 | `POST /conversations/{id}/messages` | `{"text"}` (1–4096 после trim) | `200 {"message"}`, `status` = `delivered`/`failed` | `422 field=text`; `404` |
 | `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
@@ -181,6 +182,10 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `GET /messages/{id}/attachment` | — | файл: фото — `image/jpeg` inline, документ — `application/octet-stream` attachment; `nosniff`, `CSP: sandbox` | `404` |
 
 `message`: `{"id","direction":"in"|"out","author":string|null,"kind":"text"|"photo"|"document"|"unsupported","text","file":{"name","size","available"}|null,"status":null|"sending"|"delivered"|"failed","created_at"}`.
+
+## История обращений клиента (#13)
+
+Только менеджер. Обращение — всплеск переписки клиента: пауза больше 24 часов начинает новое обращение. История собирается по всем диалогам с тем же клиентом (ключ — имя без учёта регистра, `conversations.client_key`) и поэтому показывает обращения всех каналов; пока подключён только Telegram, метка канала у всех строк `telegram`. Текущее (не закрытое паузой) обращение в историю не входит. Тема — первое входящее сообщение обращения (до 80 символов), статус прошлого обращения — `closed`. Период 7 / 30 дней / год фильтруется на фронтенде, по умолчанию 30 дней.
 ## Сортировка и фильтры (#7)
 
 Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
@@ -225,6 +230,8 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0008` | без схемы: при `LOGOS_DEV_ADMIN=1` и пустой `administrators` создаёт тестового администратора `admin`/`admin`; без переменной ничего не делает. Только для локальной разработки |
 | `0009` | без схемы: при `LOGOS_DEMO_SEED=1` и пустой базе (нет менеджеров и диалогов) — демо-данные из `demo_seed.py`: 3 менеджера `*@demo.logos` / `demo1234`, теги, 7 фейковых диалогов Telegram (непрочитанные, документ, «Не доставлено»), сохранённый фильтр; подключает демо-бота только при заданном `LOGOS_DEMO_BOT_TOKEN` (в коде токена нет; без токена или Bot API — без бота). Ответы в демо-диалоги уходят в «Не доставлено». Не для production |
 | `0010` | `manager_otp_codes`, `manager_otp_requests`, `messages.manager_id`; удаляет старые `/start`-сообщения без удаления переписки |
+| `0011` | без схемы: проставляет авторов ответов демо-диалогов (`demo_seed.py`) |
+| `0012` | `conversations.channel`, `conversations.client_key` + индекс `ix_conversations_client_key`; заполняет канал `telegram` и ключ по имени |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -232,7 +239,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `one_time_links`: уникальный `token_hash`, purpose (`invitation`/legacy `password_reset`), `consumed_at`/`revoked_at`, срок действия и частичный уникальный индекс для одной активной ссылки на менеджера. Ссылки восстановления больше не выпускаются и не проверяются.
 - `email_changes`: одна неподтверждённая смена на менеджера (уникальный `manager_id`), уникальный `token_hash`, новый адрес и его нормализованная форма; подтверждение удаляет строку.
 - `channels`: одна строка (`id=1`), `status` ∈ `connected`/`error`/`disconnected`, код ошибки, токен **открытым текстом** (ADR-0007; `NULL` после отключения), `update_offset` для `getUpdates`, `connected_at` отличает переподключения от устаревших результатов опроса.
-- `conversations`: диалог = личный чат Telegram, уникальный `chat_id`, имя клиента, `last_message_at`.
+- `conversations`: диалог = личный чат Telegram, уникальный `chat_id`, имя клиента, `last_message_at`; `channel` — канал обращения, `client_key` — имя без учёта регистра для общего таймлайна истории (#13).
 - `messages`: `direction` `in`/`out`, `kind`, текст/подпись, имя/размер файла, `file_path` — имя файла в `attachments/` рядом с SQLite (отдаётся только через API). У входящих `read_at` (общая прочитанность), у исходящих `status`. Частичный уникальный индекс `(conversation_id, telegram_message_id) WHERE direction='in'` отсекает дубли.
 - `tags`: уникальный `name_normalized`; `manager_id` NULL — стандартный тег, иначе автор. `conversation_tags` — связь с CASCADE на диалог и тег.
 - `inbox_preferences` (`manager_id`, `sort`) и `saved_filters` (`manager_id`, `name` уникально у менеджера, `filters` — JSON).
