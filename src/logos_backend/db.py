@@ -54,6 +54,7 @@ INBOX_PREFERENCES_TABLE = "inbox_preferences"
 SAVED_FILTERS_TABLE = "saved_filters"
 PINNED_CONVERSATIONS_TABLE = "pinned_conversations"
 REPLY_TEMPLATES_TABLE = "reply_templates"
+CLIENT_NOTES_TABLE = "client_notes"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -75,6 +76,7 @@ REQUIRED_TABLES = frozenset(
         MANAGER_OTP_REQUESTS_TABLE,
         REPLY_TEMPLATES_TABLE,
         PINNED_CONVERSATIONS_TABLE,
+        CLIENT_NOTES_TABLE,
     }
 )
 
@@ -350,6 +352,30 @@ Index(
     "ix_pinned_conversations_conversation",
     pinned_conversations.c.conversation_id,
 )
+
+# Заметки о клиентах (#14): автор — менеджер; видимость team/private.
+client_notes = Table(
+    CLIENT_NOTES_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="SET NULL"), nullable=True),
+    Column("text", String, nullable=False),
+    Column("visibility", String, nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("updated_at", Integer, nullable=False),
+    CheckConstraint("length(trim(text)) > 0", name="ck_client_notes_text_not_blank"),
+    CheckConstraint("visibility IN ('team', 'private')", name="ck_client_notes_visibility"),
+    CheckConstraint("version >= 1", name="ck_client_notes_version"),
+)
+
+Index("ix_client_notes_conversation", client_notes.c.conversation_id)
 
 Index(
     "uq_one_time_links_active",
