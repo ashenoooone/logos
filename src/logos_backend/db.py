@@ -55,6 +55,7 @@ SAVED_FILTERS_TABLE = "saved_filters"
 PINNED_CONVERSATIONS_TABLE = "pinned_conversations"
 REPLY_TEMPLATES_TABLE = "reply_templates"
 CLIENT_NOTES_TABLE = "client_notes"
+CONVERSATION_COMMENTS_TABLE = "conversation_comments"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -77,6 +78,7 @@ REQUIRED_TABLES = frozenset(
         REPLY_TEMPLATES_TABLE,
         PINNED_CONVERSATIONS_TABLE,
         CLIENT_NOTES_TABLE,
+        CONVERSATION_COMMENTS_TABLE,
     }
 )
 
@@ -376,6 +378,34 @@ client_notes = Table(
 )
 
 Index("ix_client_notes_conversation", client_notes.c.conversation_id)
+
+# Внутренние комментарии команды (#15). Отдельная от messages таблица: не уходят
+# клиенту, не попадают в счётчики и выгрузку переписки. ``mentions`` — JSON
+# [{"id","name"}] с именем на момент отправки: удалённого коллегу показываем
+# как «пользователь не найден».
+conversation_comments = Table(
+    CONVERSATION_COMMENTS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("manager_id", Integer, ForeignKey("managers.id", ondelete="SET NULL"), nullable=True),
+    Column("text", String, nullable=False),
+    Column("mentions", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    CheckConstraint(
+        "length(trim(text)) > 0", name="ck_conversation_comments_text_not_blank"
+    ),
+)
+
+Index(
+    "ix_conversation_comments_conversation",
+    conversation_comments.c.conversation_id,
+)
 
 Index(
     "uq_one_time_links_active",

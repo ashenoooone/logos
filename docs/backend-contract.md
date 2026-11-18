@@ -181,11 +181,18 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
 | `POST /messages/{id}/retry` | — | `200 {"message"}` | `409` — ответ не в статусе `failed` |
 | `GET /messages/{id}/attachment` | — | файл: фото — `image/jpeg` inline, документ — `application/octet-stream` attachment; `nosniff`, `CSP: sandbox` | `404` |
+| `GET /conversations/{id}/comments` | — | `200 {"comments":[{"id","text","author","created_at","mentions":[{"id","name","available"}]}],"colleagues":[{"id","name"}]}`; тред команды в порядке отправки, `colleagues` — активные коллеги для @упоминания (без текущего менеджера) | `404` |
+| `POST /conversations/{id}/comments` | `{"text"}` (1–4096 после trim) | `200 {"comment"}` — внутренний комментарий, в Telegram не отправляется | `422 field=text`; `404` |
 
 `message`: `{"id","direction":"in"|"out","author":string|null,"kind":"text"|"photo"|"document"|"unsupported","text","file":{"name","size","available"}|null,"status":null|"sending"|"delivered"|"failed","created_at"}`.
 
 Закрепление (#12) — личное у менеджера: не больше 5 диалогов, ни на кого другого не влияет. Удаление диалога снимает закрепление каскадом, поэтому счётчик уменьшается без ошибки.
 
+### Внутренние комментарии (#15)
+
+- Отдельный тред команды: хранится в `conversation_comments`, не смешивается с `messages`, не уходит в канал клиента, не меняет непрочитанность, порядок списка и выгрузку переписки.
+- Упоминание — `@Имя` в тексте; сервер сопоставляет его с менеджерами и сохраняет `[{"id","name"}]` с именем на момент отправки. При чтении `available=false` — коллега удалён, фронтенд показывает «пользователь не найден». Уведомление упомянутому не отправляется.
+- Комментарий изменяет только `conversation_comments`; отправка в Telegram не выполняется.
 ## Сортировка и фильтры (#7)
 
 Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
@@ -261,6 +268,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0012` | `reply_templates` |
 | `0013` | `pinned_conversations` + индекс `ix_pinned_conversations_conversation` |
 | `0014` | `client_notes` + индекс `ix_client_notes_conversation` |
+| `0015` | `conversation_comments` + индекс `ix_conversation_comments_conversation` |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -274,6 +282,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `reply_templates`: общий шаблон ответа; `manager_id` — автор, менять и удалять может только он; CASCADE при удалении менеджера.
 - `inbox_preferences` (`manager_id`, `sort`) и `saved_filters` (`manager_id`, `name` уникально у менеджера, `filters` — JSON).
 - `pinned_conversations` (`manager_id`, `conversation_id`, `pinned_at`): личные закрепления менеджера, не больше 5; CASCADE на менеджера и диалог.
+- `conversation_comments`: комментарий команды в диалоге, автор (`NULL` после удаления менеджера), текст, `mentions` — JSON с id и именем на момент отправки; CASCADE при удалении диалога.
 - `manager_otp_codes`: один хеш кода, срок действия, счётчик попыток и время выдачи на активного менеджера; неверные попытки сохраняются.
 - `manager_otp_requests`: последний разрешённый запрос на нормализованный email для общего 60-секундного ограничения.
 - `client_notes`: заметка диалога, автор-менеджер (`NULL` после удаления автора), текст, видимость `team`/`private`, `version` для защиты от устаревшей правки; CASCADE при удалении диалога.

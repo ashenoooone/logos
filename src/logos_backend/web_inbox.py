@@ -14,7 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from logos_backend import inbox
+from logos_backend import comments, inbox
 from logos_backend.web_account import Manager
 from logos_backend.web_auth import require_csrf
 
@@ -30,6 +30,10 @@ class ReplyBody(BaseModel):
 
 class SortBody(BaseModel):
     sort: Literal["newest", "oldest", "unread"]
+
+
+class CommentBody(BaseModel):
+    text: str = Field(max_length=comments.MAX_TEXT_LENGTH)
 
 
 class Filters(BaseModel):
@@ -125,6 +129,27 @@ def pin(conversation_id: int, subject: Manager) -> JSONResponse:
 def unpin(conversation_id: int, subject: Manager) -> JSONResponse:
     inbox.unpin(subject.id, conversation_id)
     return _json({"status": "ok"})
+
+
+@router.get("/conversations/{conversation_id}/comments")
+def list_comments(conversation_id: int, subject: Manager) -> JSONResponse:
+    """Внутренний тред команды (#15); коллеги — для подсказки @упоминания."""
+    try:
+        return _json(comments.list_comments(conversation_id, subject.id))
+    except comments.ConversationNotFoundError:
+        return _not_found()
+
+
+@router.post("/conversations/{conversation_id}/comments", dependencies=[Depends(require_csrf)])
+def add_comment(conversation_id: int, payload: CommentBody, subject: Manager) -> JSONResponse:
+    """Комментарий остаётся внутри системы и клиенту не отправляется (#15)."""
+    text = payload.text.strip()
+    if not text:
+        return _field_error("text", "Text must not be blank")
+    try:
+        return _json({"comment": comments.add_comment(conversation_id, subject.id, text)})
+    except comments.ConversationNotFoundError:
+        return _not_found()
 
 
 @router.post("/conversations/{conversation_id}/messages", dependencies=[Depends(require_csrf)])

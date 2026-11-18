@@ -63,6 +63,7 @@ import {
   unpinConversation,
 } from '../api/inbox'
 import { InboxToolbar } from './inbox-toolbar'
+import { ThreadComments } from './thread-comments'
 
 // Рамка во весь экран под шапкой (≈49px) и отступами страницы.
 const HEIGHT = 'calc(100dvh - 90px)'
@@ -596,7 +597,7 @@ function ThreadView({
   const query = useQuery(threadQueryOptions(id))
   const viewport = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [tab, setTab] = useState<'thread' | 'notes'>('thread')
+  const [tab, setTab] = useState<'thread' | 'notes' | 'team'>('thread')
 
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
@@ -702,57 +703,61 @@ function ThreadView({
           </Tooltip>
         </Box>
       </Group>
-      <Tabs value={tab} onChange={(value) => setTab(value === 'notes' ? 'notes' : 'thread')}>
+      <Tabs
+        value={tab}
+        onChange={(value) =>
+          setTab(value === 'notes' ? 'notes' : value === 'team' ? 'team' : 'thread')
+        }
+      >
         <Tabs.List px="md">
           <Tabs.Tab value="thread">Переписка</Tabs.Tab>
           <Tabs.Tab value="notes">Заметки</Tabs.Tab>
+          <Tabs.Tab value="team">Команда</Tabs.Tab>
         </Tabs.List>
       </Tabs>
 
-      {tab === 'notes' ? (
-        <ClientNotes conversationId={id} />
-      ) : (
-        <>
-          <ConversationTags conversationId={id} tags={thread.conversation.tags} />
+      {/* Оба треда остаются смонтированными: черновики сохраняются при переключении. */}
+      <Box
+        style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
+        display={tab === 'thread' ? 'flex' : 'none'}
+      >
+        <ConversationTags conversationId={id} tags={thread.conversation.tags} />
 
-          <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
-            <Stack gap="sm" py="md">
-              {thread.messages.map((message) => (
-                <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
-              ))}
-            </Stack>
-          </ScrollArea>
+        <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
+          <Stack gap="sm" py="md">
+            {thread.messages.map((message) => (
+              <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
+            ))}
+          </Stack>
+        </ScrollArea>
 
-          {notice && (
-            <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
-              {notice}
-            </Alert>
-          )}
-          <Composer
-            onSend={async (text, file) => {
-              setNotice(null)
-              try {
-                return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
-              } catch {
-                setNotice(failureMessage())
-                return false
-              }
-            }}
-          />
-        </>
-      )}
-      <Composer
-        conversationName={thread.conversation.name}
-        onSend={async (text, file) => {
-          setNotice(null)
-          try {
-            return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
-          } catch {
-            setNotice(failureMessage())
-            return false
-          }
-        }}
-      />
+        {notice && (
+          <Alert color="red" role="alert" mx="md" withCloseButton onClose={() => setNotice(null)}>
+            {notice}
+          </Alert>
+        )}
+        <Composer
+          conversationName={thread.conversation.name}
+          onSend={async (text, file) => {
+            setNotice(null)
+            try {
+              return handle(file ? await sendFile(id, file, text) : await sendReply(id, text))
+            } catch {
+              setNotice(failureMessage())
+              return false
+            }
+          }}
+        />
+      </Box>
+
+      {tab === 'notes' && <ClientNotes conversationId={id} />}
+
+      <Box
+        style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}
+        display={tab === 'team' ? 'flex' : 'none'}
+      >
+        <ThreadComments id={id} active={tab === 'team'} />
+      </Box>
     </>
   )
 }
