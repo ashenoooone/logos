@@ -25,6 +25,7 @@ from logos_backend.web_auth import router as auth_router
 from logos_backend.web_channels import router as channels_router
 from logos_backend.web_inbox import router as inbox_router
 from logos_backend.web_managers import router as managers_router
+from logos_backend.web_reports import router as reports_router
 from logos_backend.web_tags import router as tags_router
 
 # Общий предохранитель запроса: превышение отклоняется до чтения и разбора
@@ -79,6 +80,7 @@ app.include_router(account_router)
 app.include_router(inbox_router)
 app.include_router(tags_router)
 app.include_router(channels_router)
+app.include_router(reports_router)
 
 
 @app.exception_handler(RequestValidationError)

@@ -76,6 +76,13 @@ function AdminTiles() {
           </Pills>
         )}
       </HubTile>
+
+      <HubTile to="/reports" tone="night" title="Отчёты">
+        <Text className="logos-hub-value-sm">Статистика менеджеров</Text>
+        <Pills>
+          <span>KPI и выгрузка в CSV</span>
+        </Pills>
+      </HubTile>
     </div>
   )
 }
@@ -127,7 +134,7 @@ function plural(n: number, one: string, few: string, many: string) {
 }
 
 type TileProps = {
-  to: '/employees' | '/channels' | '/tag-catalog' | '/inbox' | '/profile'
+  to: '/employees' | '/channels' | '/tag-catalog' | '/reports' | '/inbox' | '/profile'
   tone: 'violet' | 'green' | 'orange' | 'night'
   title: string
   tall?: boolean

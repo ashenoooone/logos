@@ -13,6 +13,9 @@ ALLOWED_ORIGINS_ENV = "LOGOS_ALLOWED_ORIGINS"
 PUBLIC_BASE_URL_ENV = "LOGOS_PUBLIC_BASE_URL"
 DEFAULT_PUBLIC_BASE_URL = "http://localhost:5173"
 
+TIMEZONE_ENV = "LOGOS_TIMEZONE"
+DEFAULT_TIMEZONE = "Europe/Moscow"
+
 SMTP_HOST_ENV = "LOGOS_SMTP_HOST"
 SMTP_PORT_ENV = "LOGOS_SMTP_PORT"
 SMTP_FROM_ENV = "LOGOS_SMTP_FROM"
@@ -66,6 +69,14 @@ def get_public_base_url() -> str:
     raw = os.environ.get(PUBLIC_BASE_URL_ENV)
     if raw is None or not raw.strip():
         return DEFAULT_PUBLIC_BASE_URL
+    return raw.strip()
+
+
+def get_company_timezone() -> str:
+    """Часовой пояс компании для границ отчётного периода (#17)."""
+    raw = os.environ.get(TIMEZONE_ENV)
+    if raw is None or not raw.strip():
+        return DEFAULT_TIMEZONE
     return raw.strip()
 
 

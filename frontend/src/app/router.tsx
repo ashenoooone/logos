@@ -13,6 +13,7 @@ import { InboxPage } from '@/pages/inbox/inbox-page'
 import { InvitationPage } from '@/pages/invitation/invitation-page'
 import { LoginPage } from '@/pages/login/login-page'
 import { ProfilePage } from '@/pages/profile/profile-page'
+import { ReportsPage } from '@/pages/reports/reports-page'
 import { HomePage } from '@/pages/home/home-page'
 import { NotFoundPage } from '@/pages/not-found/not-found-page'
 import { TagCatalogPage } from '@/pages/tag-catalog/tag-catalog-page'
@@ -81,6 +82,11 @@ const routeTree = rootRoute.addChildren([
         getParentRoute: () => administratorRoute,
         path: '/tag-catalog',
         component: TagCatalogPage,
+      }),
+      createRoute({
+        getParentRoute: () => administratorRoute,
+        path: '/reports',
+        component: ReportsPage,
       }),
     ]),
     managerRoute.addChildren([
