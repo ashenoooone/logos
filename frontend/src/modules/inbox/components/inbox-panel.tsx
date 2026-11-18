@@ -28,6 +28,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { failureMessage } from '@/common/api-client'
 import { useSession } from '@/modules/session'
 import { ConversationTags, TagBadge, tagsQueryOptions } from '@/modules/tags'
+import { ReplyTemplates } from '@/modules/templates'
 
 import {
   arrange,
@@ -544,6 +545,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
         </Alert>
       )}
       <Composer
+        conversationName={thread.conversation.name}
         onSend={async (text, file) => {
           setNotice(null)
           try {
@@ -641,7 +643,13 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
   )
 }
 
-function Composer({ onSend }: { onSend: (text: string, file: File | null) => Promise<boolean> }) {
+function Composer({
+  conversationName,
+  onSend,
+}: {
+  conversationName: string
+  onSend: (text: string, file: File | null) => Promise<boolean>
+}) {
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [pending, setPending] = useState(false)
@@ -698,6 +706,12 @@ function Composer({ onSend }: { onSend: (text: string, file: File | null) => Pro
                 void handleSubmit(event)
               }
             }}
+          />
+          <ReplyTemplates
+            conversationName={conversationName}
+            onInsert={(template) =>
+              setText((current) => (current.trim() ? `${current.trimEnd()}\n${template}` : template))
+            }
           />
           <FileButton onChange={setFile}>
             {(props) => (

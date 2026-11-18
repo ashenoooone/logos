@@ -52,6 +52,8 @@ TAGS_TABLE = "tags"
 CONVERSATION_TAGS_TABLE = "conversation_tags"
 INBOX_PREFERENCES_TABLE = "inbox_preferences"
 SAVED_FILTERS_TABLE = "saved_filters"
+PINNED_CONVERSATIONS_TABLE = "pinned_conversations"
+REPLY_TEMPLATES_TABLE = "reply_templates"
 
 REQUIRED_TABLES = frozenset(
     {
@@ -71,6 +73,7 @@ REQUIRED_TABLES = frozenset(
         SAVED_FILTERS_TABLE,
         MANAGER_OTP_CODES_TABLE,
         MANAGER_OTP_REQUESTS_TABLE,
+        REPLY_TEMPLATES_TABLE,
     }
 )
 
@@ -274,6 +277,22 @@ tags = Table(
     Column("name", String, nullable=False),
     Column("name_normalized", String, nullable=False, unique=True),
     Column("manager_id", Integer, ForeignKey("managers.id", ondelete="CASCADE"), nullable=True),
+    Column("created_at", Integer, nullable=False),
+)
+
+# Шаблон ответа (#11): общий на компанию; менеджер меняет и удаляет только свои.
+reply_templates = Table(
+    REPLY_TEMPLATES_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("text", String, nullable=False),
+    Column(
+        "manager_id",
+        Integer,
+        ForeignKey("managers.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("created_at", Integer, nullable=False),
 )
 
