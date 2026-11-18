@@ -26,6 +26,7 @@ from logos_backend.web_channels import router as channels_router
 from logos_backend.web_inbox import router as inbox_router
 from logos_backend.web_managers import router as managers_router
 from logos_backend.web_notes import router as notes_router
+from logos_backend.web_reports import router as reports_router
 from logos_backend.web_tags import router as tags_router
 from logos_backend.web_templates import router as templates_router
 
@@ -83,6 +84,7 @@ app.include_router(notes_router)
 app.include_router(tags_router)
 app.include_router(templates_router)
 app.include_router(channels_router)
+app.include_router(reports_router)
 
 
 @app.exception_handler(RequestValidationError)

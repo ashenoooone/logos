@@ -49,6 +49,9 @@ export function SessionHeader({ managerLinks }: { managerLinks?: ReactNode }) {
             <Link to="/tag-catalog" className="logos-nav">
               Теги
             </Link>
+            <Link to="/reports" className="logos-nav">
+              Отчёты
+            </Link>
           </>
         )}
         {subject.type === 'manager' && (

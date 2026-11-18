@@ -264,6 +264,41 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 `note`: `{"id","text","visibility":"team"|"private","author":string|null,"own":bool,"editable":bool,"version":number,"created_at","updated_at"}`.
 
 `version` начинается с 1 и растёт при каждой правке. `PUT` с устаревшей версией не перезаписывает заметку: `409` возвращает актуальную версию в `note`, а в `notes` — не возвращает. Это и есть сценарий «заметку изменили, пока другой менеджер её читал».
+## Отчёты (#17)
+
+Только администратор (`401` без сессии, `403` менеджеру). Отдельного статуса «закрыто» в MVP нет: закрытым считается обращение, последнее сообщение периода в котором — ответ менеджера. Обращение закрепляется за менеджером, отправившим первый ответ в периоде; это не назначение ответственного из ADR-0007, а способ показать таблицу по менеджерам. Менеджеры без ответов остаются в таблице с нулями.
+
+`GET /admin/reports/statistics`
+
+| Параметр | Значение |
+|---|---|
+| `from`, `to` | даты `YYYY-MM-DD` включительно; пусто — текущий месяц; границы считаются в часовом поясе компании (`LOGOS_TIMEZONE`) |
+| `manager_id` | только обращения этого менеджера |
+| `channel` | `all` (по умолчанию) или `telegram`; пока канал один, цифры совпадают |
+
+`200`:
+
+```json
+{
+  "period": {"from": "2026-11-01", "to": "2026-11-19", "timezone": "Europe/Moscow"},
+  "filters": {"manager_id": null, "manager_name": null, "channel": "all"},
+  "empty": false,
+  "kpi": {
+    "conversations": 1248, "answered": 1200, "closed": 1093,
+    "closed_percent": 88, "average_response_seconds": 252
+  },
+  "managers": [
+    {"id": 1, "name": "Анна Петрова", "conversations": 342, "answered": 342,
+     "closed": 318, "closed_percent": 93, "average_response_seconds": 220}
+  ]
+}
+```
+
+- `conversations` — обращения с хотя бы одним входящим сообщением в периоде; `answered` — из них с ответом менеджера в периоде; `closed` — последнее сообщение периода исходящее; `average_response_seconds` — среднее от первого входящего до первого ответа, `null` без ответов.
+- `empty=true` и `managers=[]`, если обращений за период после фильтров нет; нули KPI на экране не показываются.
+- `422 {"detail","field":"from"}` — начало позже конца или некорректная дата; `404` — неизвестный `manager_id`.
+- CSV собирает фронтенд из этого же ответа: UTF-8 с BOM, разделитель `;`, в шапке период, менеджер, канал и часовой пояс, затем строки таблицы и «Итого». При `empty=true` выгрузка недоступна.
+- Схема БД не меняется: отчёт считается по `conversations`, `messages` и `managers`.
 
 ## Схема данных
 
@@ -318,6 +353,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `LOGOS_DATABASE_PATH` | путь к SQLite; пустое значение = не задано | `data/logos.sqlite3` от каталога запуска |
 | `LOGOS_ALLOWED_ORIGINS` | дополнительные разрешённые Origin через запятую; `*` не поддерживается | только same-origin |
 | `LOGOS_PUBLIC_BASE_URL` | базовый адрес фронтенда для ссылок в письмах | `http://localhost:5173` |
+| `LOGOS_TIMEZONE` | часовой пояс компании для границ периода отчётов (IANA) | `Europe/Moscow` |
 | `LOGOS_SMTP_HOST` | SMTP-сервер | `127.0.0.1` |
 | `LOGOS_SMTP_PORT` | SMTP-порт (целое) | `1026` |
 | `LOGOS_SMTP_FROM` | отправитель | `no-reply@logos.local` |
