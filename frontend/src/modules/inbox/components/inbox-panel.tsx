@@ -35,14 +35,17 @@ import { ConversationTags, TagBadge, tagsQueryOptions } from '@/modules/tags'
 import { ReplyTemplates } from '@/modules/templates'
 
 import {
+  acceptTransfer,
   arrange,
   attachmentUrl,
+  colleaguesQueryOptions,
   conversationsQueryOptions,
   deleteSavedFilter,
   hasFilters,
   markRead,
   NO_FILTERS,
   preferencesQueryOptions,
+  returnTransfer,
   saveFilter,
   saveSort,
   MAX_CAPTION_LENGTH,
@@ -60,10 +63,13 @@ import {
   type Preferences,
   type Result,
   type Sort,
+  type Transfer,
+  type TransferResult,
   unpinConversation,
 } from '../api/inbox'
 import { InboxToolbar } from './inbox-toolbar'
 import { ThreadComments } from './thread-comments'
+import { TransferModal } from './transfer-modal'
 
 // Рамка во весь экран под шапкой (≈49px) и отступами страницы.
 const HEIGHT = 'calc(100dvh - 90px)'
@@ -592,17 +598,23 @@ function ThreadView({
   pinCount: number
   onTogglePin: () => void
 }) {
-  const { setSubject } = useSession()
+  const { subject, setSubject } = useSession()
   const queryClient = useQueryClient()
   const query = useQuery(threadQueryOptions(id))
+  const [transferOpen, setTransferOpen] = useState(false)
+  const colleagues = useQuery({ ...colleaguesQueryOptions, enabled: transferOpen })
   const viewport = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [tab, setTab] = useState<'thread' | 'notes' | 'team'>('thread')
+  const [resolving, setResolving] = useState(false)
 
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
   const count = thread?.messages.length ?? 0
   const pinLimitReached = pinnedAt === null && pinCount >= PIN_LIMIT
+  const transfer = thread?.conversation.transfer ?? null
+  const currentManagerId = subject?.type === 'manager' ? subject.id : null
+  const pendingForMe = transfer?.status === 'pending' && transfer.to.id === currentManagerId
 
   useEffect(() => {
     if (data?.kind === 'unauthorized') {
@@ -616,6 +628,31 @@ function ThreadView({
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+  }
+
+  /** Принять или вернуть обращение; ошибки — в плашку над полем ответа. */
+  async function resolve(action: (conversationId: number) => Promise<TransferResult>) {
+    setNotice(null)
+    setResolving(true)
+    try {
+      const result = await action(id)
+      if (result.kind === 'success') {
+        refresh()
+      } else if (result.kind === 'unauthorized') {
+        setSubject(null)
+      } else if (result.kind === 'not-found') {
+        setNotice('Диалог не найден.')
+      } else if (result.kind === 'field') {
+        setNotice(result.message)
+      } else if (result.kind === 'pending') {
+        setNotice('Передача уже обработана.')
+      } else {
+        setNotice(failureMessage(result.status))
+      }
+    } catch {
+      setNotice(failureMessage())
+    }
+    setResolving(false)
   }
 
   /** Обрабатывает ответ отправки; `true` — сообщение сохранено на сервере. */
@@ -667,6 +704,21 @@ function ThreadView({
     )
   }
 
+  const feed = [
+    ...thread.messages.map((message) => ({
+      key: `m${message.id}`,
+      at: Date.parse(message.created_at),
+      message,
+      transfer: null as Transfer | null,
+    })),
+    ...thread.transfers.map((item) => ({
+      key: `t${item.id}`,
+      at: Date.parse(item.created_at),
+      message: null as Message | null,
+      transfer: item,
+    })),
+  ].sort((a, b) => a.at - b.at || (a.message ? -1 : 1))
+
   return (
     <>
       <Group
@@ -686,7 +738,17 @@ function ThreadView({
         <Badge variant="outline" color="gray" size="sm">
           {TELEGRAM_LABEL}
         </Badge>
-        <Box ml="auto">
+        {thread.conversation.assignee && (
+          <Text size="xs" c="dimmed" truncate visibleFrom="sm">
+            ответственный: {thread.conversation.assignee.name}
+          </Text>
+        )}
+        {transfer && (
+          <Badge size="sm" variant="light" color={TRANSFER_COLORS[transfer.status]}>
+            {TRANSFER_LABELS[transfer.status]}
+          </Badge>
+        )}
+        <Group gap={6} ml="auto" wrap="nowrap">
           <Tooltip
             label={`Закреплено ${PIN_LIMIT} из ${PIN_LIMIT}. Снимите закрепление с одного из диалогов.`}
             disabled={!pinLimitReached}
@@ -701,7 +763,33 @@ function ThreadView({
               {pinnedAt ? 'Открепить' : 'Закрепить'}
             </Button>
           </Tooltip>
-        </Box>
+          {pendingForMe && (
+            <>
+              <Button
+                size="xs"
+                loading={resolving}
+                onClick={() => void resolve(acceptTransfer)}
+              >
+                Принять
+              </Button>
+              <Button
+                size="xs"
+                variant="default"
+                disabled={resolving}
+                onClick={() => void resolve(returnTransfer)}
+              >
+                Возвратить
+              </Button>
+            </>
+          )}
+          <Button
+            size="xs"
+            variant={pendingForMe ? 'default' : 'light'}
+            onClick={() => setTransferOpen(true)}
+          >
+            Передать
+          </Button>
+        </Group>
       </Group>
       <Tabs
         value={tab}
@@ -725,9 +813,17 @@ function ThreadView({
 
         <ScrollArea style={{ flex: 1 }} viewportRef={viewport} px="md">
           <Stack gap="sm" py="md">
-            {thread.messages.map((message) => (
-              <MessageBubble key={message.id} message={message} onRetry={() => void handleRetry(message)} />
-            ))}
+            {feed.map((item) =>
+              item.message ? (
+                <MessageBubble
+                  key={item.key}
+                  message={item.message}
+                  onRetry={() => void handleRetry(item.message as Message)}
+                />
+              ) : (
+                <TransferEntry key={item.key} transfer={item.transfer as Transfer} />
+              ),
+            )}
           </Stack>
         </ScrollArea>
 
@@ -758,7 +854,58 @@ function ThreadView({
       >
         <ThreadComments id={id} active={tab === 'team'} />
       </Box>
+
+      {transferOpen && (
+        <TransferModal
+          conversationId={id}
+          managers={
+            colleagues.data?.kind === 'success' ? colleagues.data.value : []
+          }
+          loading={colleagues.isPending}
+          onClose={() => setTransferOpen(false)}
+          onDone={() => {
+            setTransferOpen(false)
+            refresh()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+const TRANSFER_LABELS: Record<Transfer['status'], string> = {
+  pending: 'Ожидает принятия',
+  accepted: 'Принято',
+  returned: 'Возвращено',
+}
+
+const TRANSFER_COLORS: Record<Transfer['status'], string> = {
+  pending: 'yellow',
+  accepted: 'green',
+  returned: 'gray',
+}
+
+/** Системная запись в ленте: кто, кому, когда и с каким комментарием передал. */
+function TransferEntry({ transfer }: { transfer: Transfer }) {
+  return (
+    <Box
+      ta="center"
+      px="md"
+      py={6}
+      bg="gray.0"
+      style={{ borderRadius: 12, alignSelf: 'center', maxWidth: '85%' }}
+    >
+      <Text size="xs" c="dimmed">
+        {transfer.from ? `${transfer.from.name} → ${transfer.to.name}` : transfer.to.name} ·{' '}
+        {formatTime(transfer.created_at)}
+      </Text>
+      <Text size="xs" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+        «{transfer.comment}»
+      </Text>
+      <Badge size="xs" variant="light" color={TRANSFER_COLORS[transfer.status]} mt={2}>
+        {TRANSFER_LABELS[transfer.status]}
+      </Badge>
+    </Box>
   )
 }
 

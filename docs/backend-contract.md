@@ -173,7 +173,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | Эндпоинт | Тело | Успех | Ошибки |
 |---|---|---|---|
 | `GET /conversations` | optional `?q=<string>` (подстрока без учёта регистра в имени клиента или тексте сообщений) | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}],"pinned_at"}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху; `pinned_at` — время закрепления у текущего менеджера или `null` | — |
-| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
+| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags","assignee","transfer"},"messages":[…],"transfers":[…]}`; вся переписка по порядку | `404` |
 | `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
 | `POST /conversations/{id}/pin` | — | `200 {"pinned_at"}`; повторный вызов время не меняет | `404`; `409 {"detail":"Pin limit reached","limit":5}` |
 | `DELETE /conversations/{id}/pin` | — | `200 {"status":"ok"}`; повторный вызов ничего не меняет | — |
@@ -193,6 +193,19 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - Отдельный тред команды: хранится в `conversation_comments`, не смешивается с `messages`, не уходит в канал клиента, не меняет непрочитанность, порядок списка и выгрузку переписки.
 - Упоминание — `@Имя` в тексте; сервер сопоставляет его с менеджерами и сохраняет `[{"id","name"}]` с именем на момент отправки. При чтении `available=false` — коллега удалён, фронтенд показывает «пользователь не найден». Уведомление упомянутому не отправляется.
 - Комментарий изменяет только `conversation_comments`; отправка в Telegram не выполняется.
+
+## Передача обращений (#16)
+
+Только менеджер; все `POST` требуют CSRF. Ответственный не ограничивает доступ к диалогам: все менеджеры по-прежнему видят и могут отвечать (ADR-0007 сохраняет силу для доступа). Передача меняет только ответственного; клиент, история и теги остаются. «В смене» — флаг `managers.on_shift` (по умолчанию включён); вне смены выбрать нельзя.
+
+| Эндпоинт | Тело | Успех | Ошибки |
+|---|---|---|---|
+| `GET /managers` | — | `200 {"managers":[{"id","name","on_shift"}]}`; активные коллеги без текущего менеджера и ожидающих приглашения | — |
+| `POST /conversations/{id}/transfer` | `{"to_manager_id":<number>,"comment":"1–1000"}` | `200 {"status":"ok"}`; создаётся передача `pending`, ответственный — выбранный менеджер | `404`; `422 field=comment` (пусто после trim); `422 field=to_manager_id` (нет такого, не принял приглашение, не в смене, текущий ответственный или сам менеджер); `409` — уже есть передача в ожидании |
+| `POST /conversations/{id}/transfer/accept` | — | `200 {"status":"ok"}`; передача становится `accepted` | `409` — нет ожидающей передачи; `403` — передача адресована другому менеджеру |
+| `POST /conversations/{id}/transfer/return` | — | `200 {"status":"ok"}`; передача становится `returned`, ответственный — прежний владелец (`from`), комментарий сохраняется | `409`; `403` — как у `accept` |
+
+`transfer`: `{"id","from":{"id","name"}|null,"to":{"id","name"},"comment","status":"pending"|"accepted"|"returned","created_at","resolved_at"}`. `conversation.assignee` — текущий ответственный или `null`, `conversation.transfer` — последняя передача или `null`. Статус в шапке: `pending` — «Ожидает принятия», `returned` — «Возвращено». Запись о передаче показывается в ленте между сообщениями по времени.
 ## Сортировка и фильтры (#7)
 
 Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
@@ -269,6 +282,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0013` | `pinned_conversations` + индекс `ix_pinned_conversations_conversation` |
 | `0014` | `client_notes` + индекс `ix_client_notes_conversation` |
 | `0015` | `conversation_comments` + индекс `ix_conversation_comments_conversation` |
+| `0016` | `conversation_transfers` + индекс `ix_conversation_transfers_conversation`; `managers.on_shift` (по умолчанию `1`), `conversations.assignee_manager_id`; демо-менеджер `igor@demo.logos` переводится вне смены |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -286,6 +300,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `manager_otp_codes`: один хеш кода, срок действия, счётчик попыток и время выдачи на активного менеджера; неверные попытки сохраняются.
 - `manager_otp_requests`: последний разрешённый запрос на нормализованный email для общего 60-секундного ограничения.
 - `client_notes`: заметка диалога, автор-менеджер (`NULL` после удаления автора), текст, видимость `team`/`private`, `version` для защиты от устаревшей правки; CASCADE при удалении диалога.
+- `conversation_transfers`: журнал передач (`from` — прежний владелец, `to` — получатель, комментарий, `status` ∈ `pending`/`accepted`/`returned`, `created_at`, `resolved_at`). `conversations.assignee_manager_id` — текущий ответственный (`NULL` — не назначен); `managers.on_shift` — участие в смене.
 
 В БД не хранятся открытые токены сессий и одноразовых ссылок — только SHA-256-дайджесты. Исключение — токен Telegram-бота: он нужен для вызовов Bot API.
 

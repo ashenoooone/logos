@@ -1,6 +1,7 @@
 # Inbox
 
 «Входящие» менеджера (#6): `GET /conversations`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/read`, `POST /conversations/{id}/messages`, `POST /conversations/{id}/files`, `POST /messages/{id}/retry`, `GET /messages/{id}/attachment`; #7 — `GET /conversations/preferences`, `PUT /conversations/preferences/sort`, `POST|DELETE /conversations/saved-filters`; #15 — `GET|POST /conversations/{id}/comments`.
+«Входящие» менеджера (#6): `GET /conversations`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/read`, `POST /conversations/{id}/messages`, `POST /conversations/{id}/files`, `POST /messages/{id}/retry`, `GET /messages/{id}/attachment`; #7 — `GET /conversations/preferences`, `PUT /conversations/preferences/sort`, `POST|DELETE /conversations/saved-filters`; #16 — `GET /managers`, `POST /conversations/{id}/transfer`, `…/transfer/accept`, `…/transfer/return`.
 
 ## Публичный API
 
@@ -11,5 +12,6 @@
 - Закрепление (#12): до пяти диалогов у менеджера, блок «Закреплённые» сверху (новые закрепления первыми, счётчик «N из 5»), кнопка в шапке диалога и пункт меню строки, повторное нажатие снимает. Позиция закреплённого не зависит от новых сообщений.
 - Теги диалога — `ConversationTags` и `TagBadge` из модуля `tags`.
 - Переключатель «Клиент / Команда» в шапке диалога (#15): внутренние комментарии команды в отдельном жёлтом треде с автором и датой, `@упоминание` через меню коллег (удалённый коллега — «пользователь не найден»). Черновики обоих тредов сохраняются при переключении, комментарии клиенту не уходят.
+- Передача (#16): «Передать» в шапке диалога, модальное окно с коллегой и обязательным комментарием, статус «Ожидает принятия» / «Принято» / «Возвращено», у получателя кнопки «Принять» и «Возвратить». Запись о передаче — в ленте по времени.
 
 Список и диалог опрашиваются раз в 4 с (ADR-0007). `401` сбрасывает сессию.

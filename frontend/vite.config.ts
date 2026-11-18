@@ -14,6 +14,7 @@ const backendProxy = {
   '/messages': 'http://127.0.0.1:8000',
   '/tags': 'http://127.0.0.1:8000',
   '/templates': 'http://127.0.0.1:8000',
+  '/managers': 'http://127.0.0.1:8000',
 }
 
 export default defineConfig({

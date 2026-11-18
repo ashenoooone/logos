@@ -56,11 +56,13 @@ PINNED_CONVERSATIONS_TABLE = "pinned_conversations"
 REPLY_TEMPLATES_TABLE = "reply_templates"
 CLIENT_NOTES_TABLE = "client_notes"
 CONVERSATION_COMMENTS_TABLE = "conversation_comments"
+CONVERSATION_TRANSFERS_TABLE = "conversation_transfers"
 
 REQUIRED_TABLES = frozenset(
     {
         CONVERSATIONS_TABLE,
         MESSAGES_TABLE,
+        CONVERSATION_TRANSFERS_TABLE,
         ADMINISTRATORS_TABLE,
         MANAGERS_TABLE,
         SESSIONS_TABLE,
@@ -100,6 +102,7 @@ managers = Table(
     Column("email", String, nullable=False),
     Column("email_normalized", String, nullable=False, unique=True),
     Column("password_hash", String, nullable=True),
+    Column("on_shift", Integer, nullable=False, server_default="1"),
     Column("created_at", Integer, nullable=False),
     CheckConstraint("length(trim(name)) > 0", name="ck_managers_name_not_blank"),
     CheckConstraint("length(trim(email)) > 0", name="ck_managers_email_not_blank"),
@@ -246,8 +249,49 @@ conversations = Table(
     Column("id", Integer, primary_key=True),
     Column("chat_id", Integer, nullable=False, unique=True),
     Column("name", String, nullable=False),
+    Column(
+        "assignee_manager_id",
+        Integer,
+        ForeignKey("managers.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
     Column("created_at", Integer, nullable=False),
     Column("last_message_at", Integer, nullable=False),
+)
+
+# Передача обращения (#16): текущая запись решает статус диалога —
+# «Ожидает принятия» (pending), «Принято» (accepted) или «Возвращено» (returned).
+conversation_transfers = Table(
+    CONVERSATION_TRANSFERS_TABLE,
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "conversation_id",
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "from_manager_id",
+        Integer,
+        ForeignKey("managers.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("to_manager_id", Integer, ForeignKey("managers.id"), nullable=False),
+    Column("comment", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("resolved_at", Integer, nullable=True),
+    CheckConstraint(
+        "status IN ('pending', 'accepted', 'returned')", name="ck_transfers_status"
+    ),
+    CheckConstraint("length(trim(comment)) > 0", name="ck_transfers_comment"),
+)
+
+Index(
+    "ix_conversation_transfers_conversation",
+    conversation_transfers.c.conversation_id,
+    conversation_transfers.c.id,
 )
 
 # Входящие (direction='in') прочитаны, когда read_at задан; у исходящих — status.

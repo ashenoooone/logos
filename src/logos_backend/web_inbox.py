@@ -14,7 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from logos_backend import comments, inbox
+from logos_backend import comments, inbox, transfers
 from logos_backend.web_account import Manager
 from logos_backend.web_auth import require_csrf
 
@@ -49,6 +49,11 @@ class SavedFilterBody(BaseModel):
     filters: Filters
 
 
+class TransferBody(BaseModel):
+    to_manager_id: int
+    comment: str = Field(max_length=transfers.MAX_COMMENT_LENGTH)
+
+
 def _json(content: dict[str, object], status_code: int = 200) -> JSONResponse:
     return JSONResponse(
         status_code=status_code, content=content, headers={"Cache-Control": "no-store"}
@@ -66,6 +71,63 @@ def _field_error(field: str, detail: str) -> JSONResponse:
 @router.get("/conversations")
 def list_conversations(subject: Manager, q: str = "") -> JSONResponse:
     return _json(inbox.list_conversations(subject.id, q))
+
+
+@router.get("/managers")
+def list_colleagues(subject: Manager) -> JSONResponse:
+    """Активные коллеги для передачи обращения (#16)."""
+    return _json({"managers": transfers.colleagues(subject.id)})
+
+
+@router.post(
+    "/conversations/{conversation_id}/transfer", dependencies=[Depends(require_csrf)]
+)
+def transfer_conversation(
+    conversation_id: int, payload: TransferBody, subject: Manager
+) -> JSONResponse:
+    """Передаёт обращение коллеге; комментарий обязателен."""
+    try:
+        transfers.transfer(
+            conversation_id, subject.id, payload.to_manager_id, payload.comment
+        )
+    except transfers.ConversationNotFoundError:
+        return _not_found()
+    except transfers.InvalidCommentError:
+        return _field_error("comment", "Comment must not be blank")
+    except transfers.InvalidTargetError:
+        return _field_error("to_manager_id", "Manager is not on shift or unavailable")
+    except transfers.TransferPendingError:
+        return _json({"detail": "Transfer is already pending"}, status_code=409)
+    return _json({"status": "ok"})
+
+
+@router.post(
+    "/conversations/{conversation_id}/transfer/accept", dependencies=[Depends(require_csrf)]
+)
+def accept_transfer(conversation_id: int, subject: Manager) -> JSONResponse:
+    """Новый ответственный принимает обращение."""
+    return _resolve_transfer(conversation_id, subject.id, accept=True)
+
+
+@router.post(
+    "/conversations/{conversation_id}/transfer/return", dependencies=[Depends(require_csrf)]
+)
+def return_transfer(conversation_id: int, subject: Manager) -> JSONResponse:
+    """Возвращает обращение прежнему владельцу с тем же комментарием."""
+    return _resolve_transfer(conversation_id, subject.id, accept=False)
+
+
+def _resolve_transfer(conversation_id: int, manager_id: int, *, accept: bool) -> JSONResponse:
+    action = transfers.accept if accept else transfers.return_to_previous
+    try:
+        action(conversation_id, manager_id)
+    except transfers.NoPendingTransferError:
+        return _json({"detail": "No pending transfer"}, status_code=409)
+    except transfers.TransferForbiddenError:
+        return _json({"detail": "Transfer belongs to another manager"}, status_code=403)
+    except transfers.TransferConflictError:
+        return _json({"detail": "Transfer was already resolved"}, status_code=409)
+    return _json({"status": "ok"})
 
 @router.get("/conversations/preferences")
 def get_preferences(subject: Manager) -> JSONResponse:
