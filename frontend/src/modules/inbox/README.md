@@ -1,6 +1,6 @@
 # Inbox
 
-«Входящие» менеджера (#6): `GET /conversations`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/read`, `POST /conversations/{id}/messages`, `POST /conversations/{id}/files`, `POST /messages/{id}/retry`, `GET /messages/{id}/attachment`; #7 — `GET /conversations/preferences`, `PUT /conversations/preferences/sort`, `POST|DELETE /conversations/saved-filters`.
+«Входящие» менеджера (#6): `GET /conversations`, `GET /conversations/{id}/messages`, `POST /conversations/{id}/read`, `POST /conversations/{id}/messages`, `POST /conversations/{id}/files`, `POST /messages/{id}/retry`, `GET /messages/{id}/attachment`; #7 — `GET /conversations/preferences`, `PUT /conversations/preferences/sort`, `POST|DELETE /conversations/saved-filters`; #16 — `GET /managers`, `POST /conversations/{id}/transfer`, `…/transfer/accept`, `…/transfer/return`.
 
 ## Публичный API
 
@@ -9,5 +9,6 @@
 
 - Сортировка (новые/старые/непрочитанные сверху, сохраняется на сервере), фильтры канал/статус/тег с отдельным сбросом, «найдено N», пустое состояние со «Сбросить все фильтры», сохранённые наборы. Фильтрация на клиенте. Порядок списка — снимок: новые сообщения дают плашку «N новых сообщений — Показать».
 - Теги диалога — `ConversationTags` и `TagBadge` из модуля `tags`.
+- Передача (#16): «Передать» в шапке диалога, модальное окно с коллегой и обязательным комментарием, статус «Ожидает принятия» / «Принято» / «Возвращено», у получателя кнопки «Принять» и «Возвратить». Запись о передаче — в ленте по времени.
 
 Список и диалог опрашиваются раз в 4 с (ADR-0007). `401` сбрасывает сессию.

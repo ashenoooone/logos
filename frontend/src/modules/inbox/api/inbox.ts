@@ -46,8 +46,33 @@ export interface ConversationList {
 }
 
 export interface Thread {
-  conversation: { id: number; provider: 'telegram'; name: string; tags: TagRef[] }
+  conversation: {
+    id: number
+    provider: 'telegram'
+    name: string
+    tags: TagRef[]
+    assignee: TransferManager | null
+    transfer: Transfer | null
+  }
   messages: Message[]
+  transfers: Transfer[]
+}
+
+// #16: передача обращения. `pending` — «Ожидает принятия», `returned` — «Возвращено».
+export interface TransferManager {
+  id: number
+  name: string
+  on_shift?: boolean
+}
+
+export interface Transfer {
+  id: number
+  from: TransferManager | null
+  to: TransferManager
+  comment: string
+  status: 'pending' | 'accepted' | 'returned'
+  created_at: string
+  resolved_at: string | null
 }
 
 export type Result<T> =
@@ -115,6 +140,81 @@ export async function sendFile(id: number, file: File, text: string): Promise<Re
 export async function retryMessage(id: number): Promise<Result<Message>> {
   const response = await apiPost<MessageBody>(`/messages/${id}/retry`)
   return toResult(response.status, response.data?.message)
+}
+
+/** Коллеги для передачи обращения (#16); ожидающие приглашения не приходят. */
+export const colleaguesQueryOptions = queryOptions({
+  queryKey: ['managers', 'colleagues'],
+  queryFn: async ({ signal }) => {
+    const response = await apiGet<{ managers: TransferManager[] }>('/managers', signal)
+    return toResult(response.status, response.data?.managers)
+  },
+  retry: false,
+})
+
+export type TransferResult =
+  | { kind: 'success' }
+  | { kind: 'field'; field: 'comment' | 'to_manager_id'; message: string }
+  | { kind: 'pending' }
+  | { kind: 'unauthorized' }
+  | { kind: 'not-found' }
+  | { kind: 'failed'; status: number }
+
+function toTransferResult(
+  status: number,
+  data: { detail?: string; field?: string } | null,
+): TransferResult {
+  if (status === 200) {
+    return { kind: 'success' }
+  }
+  if (status === 422 && data?.field === 'comment') {
+    return { kind: 'field', field: 'comment', message: 'Напишите комментарий' }
+  }
+  if (status === 422 && data?.field === 'to_manager_id') {
+    return {
+      kind: 'field',
+      field: 'to_manager_id',
+      message: 'Менеджер не в смене или недоступен',
+    }
+  }
+  if (status === 409) {
+    return { kind: 'pending' }
+  }
+  if (status === 401) {
+    return { kind: 'unauthorized' }
+  }
+  if (status === 404) {
+    return { kind: 'not-found' }
+  }
+  return { kind: 'failed', status }
+}
+
+export async function transferConversation(
+  id: number,
+  toManagerId: number,
+  comment: string,
+): Promise<TransferResult> {
+  const response = await apiPost<{ detail?: string; field?: string }>(
+    `/conversations/${id}/transfer`,
+    { to_manager_id: toManagerId, comment },
+  )
+  return toTransferResult(response.status, response.data)
+}
+
+/** Новый ответственный принимает обращение. */
+export async function acceptTransfer(id: number): Promise<TransferResult> {
+  const response = await apiPost<{ detail?: string; field?: string }>(
+    `/conversations/${id}/transfer/accept`,
+  )
+  return toTransferResult(response.status, response.data)
+}
+
+/** Новый ответственный возвращает обращение прежнему владельцу. */
+export async function returnTransfer(id: number): Promise<TransferResult> {
+  const response = await apiPost<{ detail?: string; field?: string }>(
+    `/conversations/${id}/transfer/return`,
+  )
+  return toTransferResult(response.status, response.data)
 }
 
 export function attachmentUrl(messageId: number): string {

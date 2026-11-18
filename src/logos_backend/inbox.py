@@ -21,7 +21,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import Connection, RowMapping
 from sqlalchemy.exc import IntegrityError
 
-from logos_backend import channels, clock, tags
+from logos_backend import channels, clock, tags, transfers
 from logos_backend.config import get_database_path
 from logos_backend.db import (
     _create_engine,
@@ -361,6 +361,7 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
                 .all()
             )
             conversation_tags = tags.conversation_tag_map(connection).get(conversation_id, [])
+            assignment = transfers.state(connection, conversation_id)
     finally:
         engine.dispose()
     if conversation is None:
@@ -371,7 +372,10 @@ def get_conversation(conversation_id: int) -> dict[str, object]:
             "provider": "telegram",
             "name": conversation["name"],
             "tags": conversation_tags,
+            "assignee": assignment["assignee"],
+            "transfer": assignment["transfer"],
         },
+        "transfers": assignment["transfers"],
         "messages": [
             _message_payload(
                 {

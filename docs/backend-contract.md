@@ -2,7 +2,7 @@
 
 Документ описывает реализованное HTTP-поведение сервиса на текущей ветке. Сервис — FastAPI-приложение `logos_backend.app:app`; источник продуктовых решений #10 — ADR-0008.
 
-Реализованы email-OTP для входа менеджеров, парольный вход администратора, приглашения, профиль, каналы, входящие, сортировка и теги. Проверки описывает главный агент; этот документ не утверждает, что они пройдены.
+Реализованы email-OTP для входа менеджеров, парольный вход администратора, приглашения, профиль, каналы, входящие, сортировка, теги и передача обращений. Проверки описывает главный агент; этот документ не утверждает, что они пройдены.
 
 
 ## Общие свойства HTTP
@@ -173,7 +173,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | Эндпоинт | Тело | Успех | Ошибки |
 |---|---|---|---|
 | `GET /conversations` | optional `?q=<string>` (подстрока без учёта регистра в имени клиента или тексте сообщений) | `200 {"conversations":[{"id","provider":"telegram","name","last_message_at","unread_count","last_message","tags":[{"id","name"}]}],"unread_total","last_incoming_id","incoming_total"}`; новые сверху | — |
-| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags"},"messages":[…]}`; вся переписка по порядку | `404` |
+| `GET /conversations/{id}/messages` | — | `200 {"conversation":{"id","provider","name","tags","assignee","transfer"},"messages":[…],"transfers":[…]}`; вся переписка по порядку | `404` |
 | `POST /conversations/{id}/read` | — | `200 {"status":"ok"}`; входящие диалога прочитаны для всех менеджеров | `404` |
 | `POST /conversations/{id}/messages` | `{"text"}` (1–4096 после trim) | `200 {"message"}`, `status` = `delivered`/`failed` | `422 field=text`; `404` |
 | `POST /conversations/{id}/files?name=&text=` | сырое тело файла, 1 Б–20 МиБ; `name` ≤255, `text` ≤1024 | `200 {"message"}` — отправка `sendDocument` | `422 field=file`/`name`/`text`; `413`; `404` |
@@ -181,6 +181,19 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `GET /messages/{id}/attachment` | — | файл: фото — `image/jpeg` inline, документ — `application/octet-stream` attachment; `nosniff`, `CSP: sandbox` | `404` |
 
 `message`: `{"id","direction":"in"|"out","author":string|null,"kind":"text"|"photo"|"document"|"unsupported","text","file":{"name","size","available"}|null,"status":null|"sending"|"delivered"|"failed","created_at"}`.
+
+## Передача обращений (#16)
+
+Только менеджер; все `POST` требуют CSRF. Ответственный не ограничивает доступ к диалогам: все менеджеры по-прежнему видят и могут отвечать (ADR-0007 сохраняет силу для доступа). Передача меняет только ответственного; клиент, история и теги остаются. «В смене» — флаг `managers.on_shift` (по умолчанию включён); вне смены выбрать нельзя.
+
+| Эндпоинт | Тело | Успех | Ошибки |
+|---|---|---|---|
+| `GET /managers` | — | `200 {"managers":[{"id","name","on_shift"}]}`; активные коллеги без текущего менеджера и ожидающих приглашения | — |
+| `POST /conversations/{id}/transfer` | `{"to_manager_id":<number>,"comment":"1–1000"}` | `200 {"status":"ok"}`; создаётся передача `pending`, ответственный — выбранный менеджер | `404`; `422 field=comment` (пусто после trim); `422 field=to_manager_id` (нет такого, не принял приглашение, не в смене, текущий ответственный или сам менеджер); `409` — уже есть передача в ожидании |
+| `POST /conversations/{id}/transfer/accept` | — | `200 {"status":"ok"}`; передача становится `accepted` | `409` — нет ожидающей передачи; `403` — передача адресована другому менеджеру |
+| `POST /conversations/{id}/transfer/return` | — | `200 {"status":"ok"}`; передача становится `returned`, ответственный — прежний владелец (`from`), комментарий сохраняется | `409`; `403` — как у `accept` |
+
+`transfer`: `{"id","from":{"id","name"}|null,"to":{"id","name"},"comment","status":"pending"|"accepted"|"returned","created_at","resolved_at"}`. `conversation.assignee` — текущий ответственный или `null`, `conversation.transfer` — последняя передача или `null`. Статус в шапке: `pending` — «Ожидает принятия», `returned` — «Возвращено». Запись о передаче показывается в ленте между сообщениями по времени.
 ## Сортировка и фильтры (#7)
 
 Только менеджер; у каждого свои настройки. Сортировка и фильтрация выполняются на фронтенде по полному `GET /conversations`; сервер хранит выбор.
@@ -225,6 +238,8 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 | `0008` | без схемы: при `LOGOS_DEV_ADMIN=1` и пустой `administrators` создаёт тестового администратора `admin`/`admin`; без переменной ничего не делает. Только для локальной разработки |
 | `0009` | без схемы: при `LOGOS_DEMO_SEED=1` и пустой базе (нет менеджеров и диалогов) — демо-данные из `demo_seed.py`: 3 менеджера `*@demo.logos` / `demo1234`, теги, 7 фейковых диалогов Telegram (непрочитанные, документ, «Не доставлено»), сохранённый фильтр; подключает демо-бота только при заданном `LOGOS_DEMO_BOT_TOKEN` (в коде токена нет; без токена или Bot API — без бота). Ответы в демо-диалоги уходят в «Не доставлено». Не для production |
 | `0010` | `manager_otp_codes`, `manager_otp_requests`, `messages.manager_id`; удаляет старые `/start`-сообщения без удаления переписки |
+| `0011` | без схемы: проставляет авторов ответов демо-диалогов |
+| `0012` | `conversation_transfers` + индекс `ix_conversation_transfers_conversation`; `managers.on_shift` (по умолчанию `1`), `conversations.assignee_manager_id`; демо-менеджер `igor@demo.logos` переводится вне смены |
 
 - `administrators` (`id=1`, `login`, `password_hash`): единственный администратор, создаётся CLI; миграция `0002` не меняет строку и её логин/хеш.
 - `managers`: уникальный `email_normalized` на уровне БД; `password_hash` пуст у ожидающего; ограничения непустых имени/email.
@@ -238,6 +253,7 @@ uv run uvicorn logos_backend.app:app --host 127.0.0.1 --port 8000 --workers 1 \
 - `inbox_preferences` (`manager_id`, `sort`) и `saved_filters` (`manager_id`, `name` уникально у менеджера, `filters` — JSON).
 - `manager_otp_codes`: один хеш кода, срок действия, счётчик попыток и время выдачи на активного менеджера; неверные попытки сохраняются.
 - `manager_otp_requests`: последний разрешённый запрос на нормализованный email для общего 60-секундного ограничения.
+- `conversation_transfers`: журнал передач (`from` — прежний владелец, `to` — получатель, комментарий, `status` ∈ `pending`/`accepted`/`returned`, `created_at`, `resolved_at`). `conversations.assignee_manager_id` — текущий ответственный (`NULL` — не назначен); `managers.on_shift` — участие в смене.
 
 В БД не хранятся открытые токены сессий и одноразовых ссылок — только SHA-256-дайджесты. Исключение — токен Telegram-бота: он нужен для вызовов Bot API.
 
