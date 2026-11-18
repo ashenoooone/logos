@@ -36,6 +36,7 @@ export interface ConversationSummary {
   unread_count: number
   last_message: Message | null
   tags: TagRef[]
+  pinned_at: string | null
 }
 
 export interface ConversationList {
@@ -97,6 +98,19 @@ export function threadQueryOptions(id: number) {
 
 export async function markRead(id: number): Promise<void> {
   await apiPost(`/conversations/${id}/read`)
+}
+
+// #12: закрепление диалога у менеджера, не больше PIN_LIMIT.
+export const PIN_LIMIT = 5
+
+export async function pinConversation(id: number): Promise<Result<{ pinned_at: string }>> {
+  const response = await apiPost<{ pinned_at: string }>(`/conversations/${id}/pin`)
+  return toResult(response.status, response.data)
+}
+
+export async function unpinConversation(id: number): Promise<Result<{ status: string }>> {
+  const response = await apiSend<{ status: string }>('DELETE', `/conversations/${id}/pin`)
+  return toResult(response.status, response.data)
 }
 
 type MessageBody = { message?: Message }

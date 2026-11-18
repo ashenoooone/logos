@@ -13,6 +13,7 @@ import {
   Group,
   Image,
   Loader,
+  Menu,
   Paper,
   ScrollArea,
   Skeleton,
@@ -20,6 +21,7 @@ import {
   Text,
   TextInput,
   Textarea,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -43,6 +45,8 @@ import {
   MAX_CAPTION_LENGTH,
   MAX_FILE_BYTES,
   MAX_TEXT_LENGTH,
+  PIN_LIMIT,
+  pinConversation,
   retryMessage,
   sendFile,
   sendReply,
@@ -53,6 +57,7 @@ import {
   type Preferences,
   type Result,
   type Sort,
+  unpinConversation,
 } from '../api/inbox'
 import { InboxToolbar } from './inbox-toolbar'
 
@@ -113,6 +118,32 @@ function preview(message: Message | null) {
     return `${prefix}Файл: ${message.file.name}`
   }
   return `${prefix}${message.text ?? ''}`
+}
+
+/** Булавка (#12); путь из Tabler Icons (MIT). */
+function PinIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
+      <path d="M9 15l-4.5 4.5" />
+      <path d="M14.5 4l5.5 5.5" />
+    </svg>
+  )
+}
+
+function DotsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="12" cy="19" r="2" />
+    </svg>
+  )
+}
+
+/** Свежие закрепления сверху; порядок не зависит от новых сообщений. */
+function byPinTime(a: ConversationSummary, b: ConversationSummary) {
+  return Date.parse(b.pinned_at ?? '') - Date.parse(a.pinned_at ?? '') || b.id - a.id
 }
 
 /**
@@ -217,9 +248,43 @@ export function InboxPanel() {
     }
   }
 
+  /** Закрепляет или снимает закрепление (#12); лимит проверяет и сервер. */
+  async function togglePin(item: ConversationSummary) {
+    setNotice(null)
+    try {
+      const result = item.pinned_at
+        ? await unpinConversation(item.id)
+        : await pinConversation(item.id)
+      if (result.kind === 'unauthorized') {
+        setSubject(null)
+        return
+      }
+      if (result.kind === 'failed') {
+        setNotice(
+          result.status === 409
+            ? `Закреплено ${PIN_LIMIT} из ${PIN_LIMIT}. Снимите закрепление с одного из диалогов.`
+            : failureMessage(result.status),
+        )
+        return
+      }
+      if (result.kind === 'not-found') {
+        setNotice('Диалог не найден.')
+        return
+      }
+      setSnapshot(null)
+      await queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    } catch {
+      setNotice(failureMessage())
+    }
+  }
+
   const byId = new Map((value?.conversations ?? []).map((item) => [item.id, item]))
   const ids = currentSnapshot?.ids ?? (value ? arrange(value.conversations, sort, filters) : [])
-  const rows = ids.flatMap((id) => byId.get(id) ?? [])
+  const pinned = (value?.conversations ?? []).filter((item) => item.pinned_at !== null).sort(byPinTime)
+  const rows = ids
+    .map((id) => byId.get(id))
+    .filter((item): item is ConversationSummary => item !== undefined && item.pinned_at === null)
+  const pinLimitReached = pinned.length >= PIN_LIMIT
   const tags = allTags.data?.status === 200 ? (allTags.data.data.tags ?? []) : []
   const active = (Object.keys(FILTER_LABELS) as (keyof Filters)[]).filter((key) => filters[key].length > 0)
 
@@ -247,7 +312,7 @@ export function InboxPanel() {
           onFilters={applyFilters}
           tags={tags}
           saved={prefs?.saved_filters ?? []}
-          found={rows.length}
+          found={rows.length + pinned.length}
           onApplySaved={(saved) =>
             applyFilters({ ...NO_FILTERS, ...saved, tag: saved.tag.filter((id) => tags.some((tag) => tag.id === id)) })
           }
@@ -277,6 +342,31 @@ export function InboxPanel() {
               </UnstyledButton>
             )}
             <ScrollArea style={{ flex: 1 }}>
+              {pinned.length > 0 && (
+                <Box style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}>
+                  <Group gap={6} px="md" py={6} bg="gray.0">
+                    <Box c="dimmed" style={{ display: 'flex' }}>
+                      <PinIcon />
+                    </Box>
+                    <Text size="sm" fw={600}>
+                      Закреплённые
+                    </Text>
+                    <Text size="xs" c="dimmed" ml="auto">
+                      {pinned.length} из {PIN_LIMIT}
+                    </Text>
+                  </Group>
+                  {pinned.map((item) => (
+                    <ConversationRow
+                      key={item.id}
+                      item={item}
+                      active={item.id === selectedId}
+                      onSelect={() => setSelectedId(item.id)}
+                      onTogglePin={() => void togglePin(item)}
+                      pinLimitReached={pinLimitReached}
+                    />
+                  ))}
+                </Box>
+              )}
               {listFailed || list.isError ? (
                 <Alert color="red" role="alert" m="md" title="Не удалось загрузить диалоги">
                   <Group justify="space-between" align="center">
@@ -290,7 +380,7 @@ export function InboxPanel() {
                   Пока нет диалогов. Сообщения клиентов из подключённых мессенджеров появятся здесь.
                 </Text>
               )}
-              {value && !listPending && rows.length === 0 && (active.length > 0 || search) && (
+              {value && !listPending && rows.length === 0 && pinned.length === 0 && (active.length > 0 || search) && (
                 <Stack gap="xs" p="md" align="flex-start">
                   <Text size="sm">{search ? 'По запросу ничего не найдено.' : 'По этим фильтрам ничего не найдено.'}</Text>
                   {active.length > 0 && (
@@ -323,6 +413,8 @@ export function InboxPanel() {
                   item={item}
                   active={item.id === selectedId}
                   onSelect={() => setSelectedId(item.id)}
+                  onTogglePin={() => void togglePin(item)}
+                  pinLimitReached={pinLimitReached}
                 />
               ))}
             </ScrollArea>
@@ -337,7 +429,19 @@ export function InboxPanel() {
                 Выберите диалог
               </Text>
             ) : (
-              <ThreadView key={selectedId} id={selectedId} onClose={() => setSelectedId(null)} />
+              <ThreadView
+                key={selectedId}
+                id={selectedId}
+                onClose={() => setSelectedId(null)}
+                pinnedAt={byId.get(selectedId)?.pinned_at ?? null}
+                pinCount={pinned.length}
+                onTogglePin={() => {
+                  const item = byId.get(selectedId)
+                  if (item) {
+                    void togglePin(item)
+                  }
+                }}
+              />
             )}
           </Box>
         </Paper>
@@ -374,67 +478,116 @@ function ConversationRow({
   item,
   active,
   onSelect,
+  onTogglePin,
+  pinLimitReached,
 }: {
   item: ConversationSummary
   active: boolean
   onSelect: () => void
+  onTogglePin: () => void
+  pinLimitReached: boolean
 }) {
   return (
-    <UnstyledButton
-      onClick={onSelect}
-      w="100%"
+    <Group
+      gap={4}
+      wrap="nowrap"
       px="md"
       py="sm"
       bg={active ? 'gray.1' : undefined}
-      aria-current={active || undefined}
       style={{
         borderBottom: '1px solid var(--mantine-color-gray-2)',
         boxShadow: active ? 'inset 3px 0 0 var(--mantine-color-ink-6)' : undefined,
-        display: 'block',
       }}
     >
-      <Group gap="sm" wrap="nowrap" align="flex-start">
-        <Avatar radius="xl" color="initials" name={item.name}>
-          {initials(item.name)}
-        </Avatar>
-        <Box style={{ flex: 1, minWidth: 0 }}>
-          <Group justify="space-between" wrap="nowrap" gap="xs">
-            <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-              <Text size="sm" fw={600} truncate>
-                {item.name}
+      <UnstyledButton
+        onClick={onSelect}
+        aria-current={active || undefined}
+        style={{ flex: 1, minWidth: 0, display: 'block' }}
+      >
+        <Group gap="sm" wrap="nowrap" align="flex-start">
+          <Avatar radius="xl" color="initials" name={item.name}>
+            {initials(item.name)}
+          </Avatar>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group justify="space-between" wrap="nowrap" gap="xs">
+              <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                {item.pinned_at && (
+                  <Box c="dimmed" style={{ display: 'flex', flexShrink: 0 }}>
+                    <PinIcon size={13} />
+                  </Box>
+                )}
+                <Text size="sm" fw={600} truncate>
+                  {item.name}
+                </Text>
+                <Badge size="xs" variant="outline" color="gray">
+                  {TELEGRAM_LABEL}
+                </Badge>
+              </Group>
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                {formatTime(item.last_message_at)}
               </Text>
-              <Badge size="xs" variant="outline" color="gray">
-                {TELEGRAM_LABEL}
-              </Badge>
             </Group>
-            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {formatTime(item.last_message_at)}
-            </Text>
-          </Group>
-          <Group justify="space-between" wrap="nowrap" gap="xs">
-            <Text size="sm" c="dimmed" truncate>
-              {preview(item.last_message)}
-            </Text>
-            {item.unread_count > 0 && (
-              <Badge size="sm" color="red" circle={item.unread_count < 10} aria-label={`непрочитанных: ${item.unread_count}`}>
-                {item.unread_count}
-              </Badge>
+            <Group justify="space-between" wrap="nowrap" gap="xs">
+              <Text size="sm" c="dimmed" truncate>
+                {preview(item.last_message)}
+              </Text>
+              {item.unread_count > 0 && (
+                <Badge size="sm" color="red" circle={item.unread_count < 10} aria-label={`непрочитанных: ${item.unread_count}`}>
+                  {item.unread_count}
+                </Badge>
+              )}
+            </Group>
+            {item.tags.length > 0 && (
+              <Group gap={4} mt={4}>
+                {item.tags.map((tag) => (
+                  <TagBadge key={tag.id} tag={tag} />
+                ))}
+              </Group>
             )}
-          </Group>
-          {item.tags.length > 0 && (
-            <Group gap={4} mt={4}>
-              {item.tags.map((tag) => (
-                <TagBadge key={tag.id} tag={tag} />
-              ))}
-            </Group>
+          </Box>
+        </Group>
+      </UnstyledButton>
+      <Menu position="bottom-end" withinPortal>
+        <Menu.Target>
+          <ActionIcon variant="subtle" color="gray" aria-label={`Действия с диалогом ${item.name}`}>
+            <DotsIcon />
+          </ActionIcon>
+        </Menu.Target>
+        <Menu.Dropdown>
+          {item.pinned_at ? (
+            <Menu.Item onClick={onTogglePin}>Открепить</Menu.Item>
+          ) : (
+            <Menu.Item
+              onClick={onTogglePin}
+              disabled={pinLimitReached}
+              title={
+                pinLimitReached
+                  ? `Закреплено ${PIN_LIMIT} из ${PIN_LIMIT} — снимите одно из закреплённых`
+                  : undefined
+              }
+            >
+              Закрепить
+            </Menu.Item>
           )}
-        </Box>
-      </Group>
-    </UnstyledButton>
+        </Menu.Dropdown>
+      </Menu>
+    </Group>
   )
 }
 
-function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
+function ThreadView({
+  id,
+  onClose,
+  pinnedAt,
+  pinCount,
+  onTogglePin,
+}: {
+  id: number
+  onClose: () => void
+  pinnedAt: string | null
+  pinCount: number
+  onTogglePin: () => void
+}) {
   const { setSubject } = useSession()
   const queryClient = useQueryClient()
   const query = useQuery(threadQueryOptions(id))
@@ -444,6 +597,7 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
   const data = query.data
   const thread = data?.kind === 'success' ? data.value : null
   const count = thread?.messages.length ?? 0
+  const pinLimitReached = pinnedAt === null && pinCount >= PIN_LIMIT
 
   useEffect(() => {
     if (data?.kind === 'unauthorized') {
@@ -527,6 +681,22 @@ function ThreadView({ id, onClose }: { id: number; onClose: () => void }) {
         <Badge variant="outline" color="gray" size="sm">
           {TELEGRAM_LABEL}
         </Badge>
+        <Box ml="auto">
+          <Tooltip
+            label={`Закреплено ${PIN_LIMIT} из ${PIN_LIMIT}. Снимите закрепление с одного из диалогов.`}
+            disabled={!pinLimitReached}
+          >
+            <Button
+              size="compact-sm"
+              variant={pinnedAt ? 'light' : 'default'}
+              leftSection={<PinIcon />}
+              onClick={onTogglePin}
+              disabled={pinLimitReached}
+            >
+              {pinnedAt ? 'Открепить' : 'Закрепить'}
+            </Button>
+          </Tooltip>
+        </Box>
       </Group>
       <ConversationTags conversationId={id} tags={thread.conversation.tags} />
 

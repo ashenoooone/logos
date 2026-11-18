@@ -61,7 +61,7 @@ def _field_error(field: str, detail: str) -> JSONResponse:
 
 @router.get("/conversations")
 def list_conversations(subject: Manager, q: str = "") -> JSONResponse:
-    return _json(inbox.list_conversations(q))
+    return _json(inbox.list_conversations(subject.id, q))
 
 @router.get("/conversations/preferences")
 def get_preferences(subject: Manager) -> JSONResponse:
@@ -105,6 +105,25 @@ def mark_read(conversation_id: int, subject: Manager) -> JSONResponse:
         inbox.mark_read(conversation_id)
     except inbox.ConversationNotFoundError:
         return _not_found()
+    return _json({"status": "ok"})
+
+
+@router.post("/conversations/{conversation_id}/pin", dependencies=[Depends(require_csrf)])
+def pin(conversation_id: int, subject: Manager) -> JSONResponse:
+    """Закрепляет диалог у менеджера; предел — ``inbox.PIN_LIMIT`` (#12)."""
+    try:
+        return _json({"pinned_at": inbox.pin(subject.id, conversation_id)})
+    except inbox.ConversationNotFoundError:
+        return _not_found()
+    except inbox.PinLimitError:
+        return _json(
+            {"detail": "Pin limit reached", "limit": inbox.PIN_LIMIT}, status_code=409
+        )
+
+
+@router.delete("/conversations/{conversation_id}/pin", dependencies=[Depends(require_csrf)])
+def unpin(conversation_id: int, subject: Manager) -> JSONResponse:
+    inbox.unpin(subject.id, conversation_id)
     return _json({"status": "ok"})
 
 
