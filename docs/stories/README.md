@@ -1,7 +1,7 @@
 # Пользовательские истории
 
 Источник требований: [GitHub issues](https://github.com/ashenoooone/logos/issues).
-Снимок проверен 2026-11-04: **8 открытых issues**, без комментариев, без назначенных GitHub-исполнителей и milestones. Закрытых issues на момент проверки нет.
+Снимок проверен 2026-11-04: **8 открытых issues**, без комментариев, без назначенных GitHub-исполнителей и milestones. Закрытых issues на момент проверки нет. Снимок #11 проверен отдельно 2026-11-19: issue открыт, без комментариев.
 
 Правки спринта [#10](https://github.com/ashenoooone/logos/issues/10) сверены отдельно 2026-11-07: `updatedAt=2026-11-07T11:18:36Z`, комментариев нет. Требования читаются в GitHub; изменения исходных #2/#3/#6/#7/#8 фиксирует [ADR-0008](../adr/0008-demo-feedback-and-manager-otp.md), а не переписанные снимки.
 
@@ -17,6 +17,7 @@
 | [#6](https://github.com/ashenoooone/logos/issues/6) | 3.2 Входящие сообщения | [06-inbox.md](06-inbox.md) | LOG-30.png | 2026-11-04 08:16:32 |
 | [#7](https://github.com/ashenoooone/logos/issues/7) | 4.1 Сортировка и фильтры | [07-sorting-and-filters.md](07-sorting-and-filters.md) | LOG-31.png | 2026-11-04 08:16:34 |
 | [#8](https://github.com/ashenoooone/logos/issues/8) | 4.2 Классификация тегами | [08-tags.md](08-tags.md) | LOG-32.png | 2026-11-04 08:16:36 |
+| [#11](https://github.com/ashenoooone/logos/issues/11) | 1.1 Шаблоны ответов | [09-reply-templates.md](09-reply-templates.md) | ID-48.png | 2026-11-18 21:09:50 |
 
 ## Зависимости и рекомендуемая последовательность
 
